@@ -5,6 +5,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import toast from 'react-hot-toast';
 
+/** Extrae un mensaje de error en texto desde la respuesta API (evita renderizar objetos y React #31). */
+function getErrorMessage(data: unknown, fallback: string): string {
+  if (data == null || typeof data !== 'object') return fallback;
+  const o = data as Record<string, unknown>;
+  if (typeof o.error === 'string') return o.error;
+  if (o.error && typeof o.error === 'object' && typeof (o.error as Record<string, unknown>).message === 'string') {
+    return (o.error as { message: string }).message;
+  }
+  if (typeof o.message === 'string') return o.message;
+  return fallback;
+}
+
 export default function Login() {
   const { user, login, isLoading } = useAuth();
   const navigate = useNavigate();
@@ -22,10 +34,13 @@ export default function Login() {
       toast.success('Bienvenido a DFP RECORDS');
       navigate('/dashboard');
     } catch (err: unknown) {
-      const ax = err as { response?: { status?: number; data?: { error?: string } } };
-      const msg = ax?.response?.data?.error || 'Error al iniciar sesión';
-      if (ax?.response?.status === 401) {
+      const ax = err as { response?: { status?: number; data?: unknown } };
+      const status = ax?.response?.status;
+      const msg = getErrorMessage(ax?.response?.data, 'Error al iniciar sesión');
+      if (status === 401) {
         toast.error('Credenciales incorrectas. Comprueba el email y la contraseña.');
+      } else if (status === 404) {
+        toast.error('No se encontró el servidor. Comprueba que la URL del API (VITE_API_URL) sea correcta.');
       } else {
         toast.error(msg);
       }
