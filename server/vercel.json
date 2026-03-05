@@ -1,4 +1,10 @@
 {
   "version": 2,
-  "buildCommand": "cd ../packages/shared && npm install && npm run build && cd ../../server && npm run build"
+  "buildCommand": "cd ../packages/shared && npm install && npm run build && cd ../../server && npm run build",
+  "builds": [
+    { "src": "index.mjs", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "/index.mjs" }
+  ]
 }
