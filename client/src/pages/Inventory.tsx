@@ -135,12 +135,12 @@ export default function Inventory() {
   const totalPages = Math.ceil(total / limit);
 
   const onPageIds = devices.map((d: { id: string }) => d.id);
-  const allOnPageSelected = onPageIds.length > 0 && onPageIds.every((id) => selectedIds.has(id));
+  const allOnPageSelected = onPageIds.length > 0 && onPageIds.every((id: string) => selectedIds.has(id));
   const toggleSelectAll = () => {
     if (allOnPageSelected) {
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        onPageIds.forEach((id) => next.delete(id));
+        onPageIds.forEach((id: string) => next.delete(id));
         return next;
       });
     } else {

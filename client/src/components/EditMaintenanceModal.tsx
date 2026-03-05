@@ -29,7 +29,7 @@ interface Maintenance {
   id: string;
   deviceId: string;
   type: string;
-  description: string;
+  description?: string;
   cost?: number | null;
   technician?: string | null;
   startDate: string;
