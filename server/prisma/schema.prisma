@@ -1,0 +1,202 @@
+// SoundVault - Sistema de Gestión de Inventario de Audio
+// Schema Prisma para Iglesia & Estudio de Grabación
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums del dominio
+enum DeviceCategory {
+  AUDIO_PA
+  RECORDING_STUDIO
+  INSTRUMENTS
+  CABLES_ACCESSORIES
+  LIGHTING
+  MULTIMEDIA
+}
+
+enum DeviceStatus {
+  ACTIVE
+  MAINTENANCE
+  DAMAGED
+  LOST
+  RETIRED
+  LOANED
+}
+
+enum DeviceLocation {
+  MAIN_AUDITORIUM
+  RECORDING_STUDIO
+  STORAGE_ROOM
+  YOUTH_ROOM
+  CHAPEL
+  ON_LOAN
+}
+
+enum MovementType {
+  CHECK_IN
+  CHECK_OUT
+  TRANSFER
+  STATUS_CHANGE
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  TECHNICIAN
+  VIEWER
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  password     String
+  role         UserRole
+  permissions  Json?     // Array de claves de permiso. Si null/empty se usan los del rol.
+  avatar       String?
+  phone        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  movements    Movement[]
+  maintenances Maintenance[]
+  loanApprovals LoanRecord[] @relation("ApprovedBy")
+}
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String
+  slug      String     @unique
+  icon      String
+  color     String
+  parentId  String?
+  parent    Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryTree")
+  devices   Device[]
+  createdAt DateTime   @default(now())
+}
+
+model Tag {
+  id      String   @id @default(cuid())
+  name    String   @unique
+  devices Device[]
+}
+
+model Device {
+  id             String          @id @default(cuid())
+  name           String
+  brand          String
+  model          String
+  serialNumber   String?         @unique
+  internalCode   String          @unique
+  categoryId     String
+  category       Category        @relation(fields: [categoryId], references: [id])
+  status         DeviceStatus    @default(ACTIVE)
+  location       DeviceLocation  @default(STORAGE_ROOM)
+  purchaseDate   DateTime?
+  purchasePrice  Decimal?        @db.Decimal(10, 2)
+  warrantyExpiry DateTime?
+  supplier       String?
+  notes          String?         @db.Text
+  observation    String?         @db.VarChar(500)
+  condition      Int             @default(100)
+  qrCode         String?
+  isQrGenerated  Boolean         @default(false)
+  createdBy      String
+  lastCheckedAt  DateTime?
+  deletedAt      DateTime?       // Soft delete
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  images         DeviceImage[]
+  documents      Document[]
+  movements      Movement[]
+  maintenances   Maintenance[]
+  loanRecords    LoanRecord[]
+  tags           Tag[]
+}
+
+model DeviceImage {
+  id        String   @id @default(cuid())
+  deviceId  String
+  device    Device   @relation(fields: [deviceId], references: [id])
+  url       String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model Document {
+  id        String   @id @default(cuid())
+  deviceId  String
+  device    Device   @relation(fields: [deviceId], references: [id])
+  name      String
+  type      String   // factura, manual, garantia
+  url       String
+  createdAt DateTime @default(now())
+}
+
+model Movement {
+  id           String         @id @default(cuid())
+  deviceId     String
+  device       Device         @relation(fields: [deviceId], references: [id])
+  type         MovementType
+  fromLocation DeviceLocation?
+  toLocation   DeviceLocation?
+  reason       String
+  userId       String
+  user         User           @relation(fields: [userId], references: [id])
+  createdAt    DateTime       @default(now())
+}
+
+model Maintenance {
+  id          String    @id @default(cuid())
+  deviceId    String
+  device      Device    @relation(fields: [deviceId], references: [id])
+  type        String
+  description String    @db.Text
+  cost        Decimal?  @db.Decimal(10, 2)
+  technician  String?
+  startDate   DateTime
+  endDate     DateTime?
+  status      String
+  notes       String?   @db.Text
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  createdAt   DateTime  @default(now())
+}
+
+model LoanRecord {
+  id              String    @id @default(cuid())
+  deviceId        String
+  device          Device    @relation(fields: [deviceId], references: [id])
+  borrowerName    String
+  borrowerEmail   String?
+  borrowerPhone   String?
+  purpose         String
+  loanDate        DateTime
+  expectedReturn  DateTime
+  returnDate      DateTime?
+  status          String
+  approvedBy      String
+  approvedByUser  User      @relation("ApprovedBy", fields: [approvedBy], references: [id])
+  notes           String?   @db.Text
+  createdAt       DateTime  @default(now())
+}
+
+// Audit trail - log de TODOS los cambios
+model AuditLog {
+  id         String   @id @default(cuid())
+  entity     String   // Device, User, Maintenance, etc.
+  entityId   String
+  action     String   // CREATE, UPDATE, DELETE
+  changes    Json?    // Campos cambiados
+  userId     String?
+  userEmail  String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+}
