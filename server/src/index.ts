@@ -35,7 +35,26 @@ dotenv.config({ path: path.join(envDir, `.env.${nodeEnv}`) });
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:5173', credentials: true }));
+// CORS: permitir CLIENT_URL (puede ser varias separadas por coma) y previews de Vercel del frontend
+const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+const isAllowedOrigin = (origin: string | undefined): boolean => {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  // Previews de Vercel: control-inventario-02-xxx.vercel.app o control-inventario-02-xxx-creativeteamiven-uxs-projects.vercel.app
+  if (/^https:\/\/control-inventario-02[\w-]*\.vercel\.app$/.test(origin)) return true;
+  return false;
+};
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      callback(null, isAllowedOrigin(origin) ? origin : false);
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 // Rutas API
