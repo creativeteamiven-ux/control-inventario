@@ -1,5 +1,4 @@
 {
   "version": 2,
-  "buildCommand": "cd ../packages/shared && npm install && npm run build && cd ../../server && npm run build",
-  "outputDirectory": "public"
+  "buildCommand": "cd ../packages/shared && npm install && npm run build && cd ../../server && npm run build"
 }
