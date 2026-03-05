@@ -43,8 +43,14 @@ const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
 const isAllowedOrigin = (origin: string | undefined): boolean => {
   if (!origin) return true;
   if (allowedOrigins.includes(origin)) return true;
-  // Previews de Vercel: control-inventario-02-xxx.vercel.app o control-inventario-02-xxx-creativeteamiven-uxs-projects.vercel.app
-  if (/^https:\/\/control-inventario-02[\w-]*\.vercel\.app$/.test(origin)) return true;
+  // Producción y previews de Vercel del frontend (cualquier subdominio que contenga el nombre del proyecto)
+  if (
+    origin.startsWith('https://') &&
+    origin.includes('control-inventario-02') &&
+    origin.endsWith('.vercel.app')
+  ) {
+    return true;
+  }
   return false;
 };
 app.use(
