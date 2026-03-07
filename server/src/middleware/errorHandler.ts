@@ -11,12 +11,24 @@ export class AppError extends Error {
   }
 }
 
+function setCorsIfAllowed(res: Response, origin: string | undefined) {
+  if (!origin) return;
+  const allowed =
+    origin === 'http://localhost:5173' ||
+    (origin.startsWith('https://') && origin.includes('control-inventario-02') && origin.endsWith('.vercel.app'));
+  if (allowed) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+}
+
 export function errorHandler(
   err: Error | AppError,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction
 ) {
+  setCorsIfAllowed(res, req.headers.origin);
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({ error: err.message });
   }

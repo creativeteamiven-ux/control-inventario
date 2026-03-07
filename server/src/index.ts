@@ -96,6 +96,16 @@ app.use('/api/users', usersRouter);
 // Archivos estáticos (uploads)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
+// 404 con CORS para que el navegador no bloquee por política CORS
+app.use((req, res) => {
+  const origin = req.headers.origin;
+  if (origin && isAllowedOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  res.status(404).json({ error: 'No encontrado', path: req.path });
+});
+
 app.use(errorHandler);
 
 // En Vercel la app se exporta y la ejecuta el runtime serverless; localmente arrancamos el servidor
