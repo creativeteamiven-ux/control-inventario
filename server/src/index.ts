@@ -24,7 +24,8 @@ import usersRouter from './routes/users.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const envDir = path.join(__dirname, '..');
+// En Vercel (Root Directory = server) no hay carpeta padre; cargar .env desde el mismo directorio que index.js
+const envDir = __dirname;
 
 // Entornos: .env (base) → .env.local (override local) → .env.development / .env.production
 dotenv.config({ path: path.join(envDir, '.env') });
@@ -94,7 +95,7 @@ app.use('/api/dashboard', dashboardRouter);
 app.use('/api/users', usersRouter);
 
 // Archivos estáticos (uploads)
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // 404 con CORS para que el navegador no bloquee por política CORS
 app.use((req, res) => {

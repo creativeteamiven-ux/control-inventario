@@ -16,6 +16,12 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+# Server compilado en raíz (outDir .)
+server/index.js
+server/index.d.ts
+server/routes/
+server/middleware/
+server/lib/
 
 # IDE / OS
 .idea/
