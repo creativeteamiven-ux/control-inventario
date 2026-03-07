@@ -14,18 +14,20 @@ Usa la **misma base Neon** que en desarrollo. Dos proyectos en Vercel, mismo rep
 
 ## 2. Vercel – Proyecto BACKEND (API)
 
+La app Express se despliega como una sola función serverless. La config está en **`server/vercel.json`**: entrada `dist/index.js`, carpeta `dist/**` incluida en el bundle, y todas las rutas enviadas a esa función.
+
 1. En [Vercel](https://vercel.com) → **Add New** → **Project**.
 2. Importa el repo de GitHub (el mismo que usas para el código).
 3. **Configuración del proyecto:**
-   - **Project Name:** por ejemplo `soundvault-api`.
-   - **Root Directory:** `server` (editar y poner `server`).
+   - **Project Name:** por ejemplo `control-inventario` o `soundvault-api`.
+   - **Root Directory:** `server` (obligatorio).
    - **Framework Preset:** Other.
-   - **Build Command:**
+   - **Build Command:** dejar el que viene en `server/vercel.json` o poner en la UI:
      ```bash
-     cd ../packages/shared && npm run build && cd ../server && npm run build
+     cd ../packages/shared && npm install && npm run build && cd ../../server && npm install && npm run build
      ```
-   - **Output Directory:** (dejar vacío; la app se sirve como función).
-   - **Install Command:** `npm install` (se ejecuta dentro de `server`; el mono-repo incluye `../packages/shared`).
+   - **Output Directory:** dejar **vacío** (no usar `public` ni otro; la API es función serverless).
+   - **Install Command:** puede dejarse por defecto; el build ya instala en `shared` y en `server`.
 
 4. **Variables de entorno** (Settings → Environment Variables), para **Production** (y Preview si quieres):
 
@@ -46,11 +48,11 @@ Usa la **misma base Neon** que en desarrollo. Dos proyectos en Vercel, mismo rep
 1. **Add New** → **Project** → mismo repo de GitHub.
 2. **Configuración:**
    - **Project Name:** por ejemplo `soundvault` o `soundvault-app`.
-   - **Root Directory:** dejar vacío (raíz del repo).
+   - **Root Directory:** `client` (así Vercel detecta Vite y sirve el estático).
    - **Framework Preset:** Vite.
-   - **Install Command:** `cd packages/shared && npm install && cd ../../client && npm install`
-   - **Build Command:** `cd packages/shared && npm run build && cd ../client && npm run build`
-   - **Output Directory:** `client/dist`
+   - **Install Command:** `cd ../packages/shared && npm install && npm run build && cd ../../client && npm install`
+   - **Build Command:** `npm run build`
+   - **Output Directory:** `dist`
 
 3. **Variable de entorno** (Production y Preview):
 
@@ -74,8 +76,8 @@ Usa la **misma base Neon** que en desarrollo. Dos proyectos en Vercel, mismo rep
 
 | Dónde    | Root Directory | Build Command |
 |----------|----------------|----------------|
-| Backend  | `server`       | `cd ../packages/shared && npm run build && cd ../server && npm run build` |
-| Frontend | (vacío)        | Install: `cd packages/shared && npm install && cd ../client && npm install` · Build: `cd packages/shared && npm run build && cd ../client && npm run build` |
+| Backend  | `server`       | `cd ../packages/shared && npm install && npm run build && cd ../../server && npm run build` |
+| Frontend | `client`       | Install: `cd ../packages/shared && npm install && npm run build && cd ../client && npm install` · Build: `npm run build` · Output: `dist` |
 
 - **Neon:** una sola base; su connection string va en el Backend como `DATABASE_URL`.
 - **Vercel:** dos proyectos (Backend y Frontend), mismo repo Git; el front llama al backend con `VITE_API_URL` y el backend acepta el origen con `CLIENT_URL`.
