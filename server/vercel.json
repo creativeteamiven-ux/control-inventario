@@ -3,15 +3,12 @@
   "buildCommand": "cd ../packages/shared && npm install && npm run build && cd ../../server && npm install && npm run build",
   "builds": [
     {
-      "src": "index.mjs",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": "dist/**"
-      }
+      "src": "dist/index.js",
+      "use": "@vercel/node"
     }
   ],
   "routes": [
-    { "src": "/(.*)", "dest": "/index.mjs" }
+    { "src": "/(.*)", "dest": "/dist/index.js" }
   ],
   "headers": [
     {
