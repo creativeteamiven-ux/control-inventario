@@ -14,20 +14,17 @@ Usa la **misma base Neon** que en desarrollo. Dos proyectos en Vercel, mismo rep
 
 ## 2. Vercel – Proyecto BACKEND (API)
 
-La app Express se despliega como una sola función serverless. La config está en **`server/vercel.json`**: el build genera `index.js` en la raíz de `server`, y `builds` + `routes` envían todo el tráfico a esa función. **Output Directory** en Vercel debe estar vacío.
+La app Express se despliega con la **Build Output API** de Vercel. El comando de build en `server/vercel.json` compila el código, luego ejecuta `scripts/build-vercel-output.mjs`, que genera `.vercel/output` con una función serverless y rutas que envían todo el tráfico a esa función. Así se evita que `index.js` se trate como estático y se resuelve el 404.
 
 1. En [Vercel](https://vercel.com) → **Add New** → **Project**.
 2. Importa el repo de GitHub (el mismo que usas para el código).
 3. **Configuración del proyecto:**
-   - **Project Name:** por ejemplo `control-inventario` o `soundvault-api`.
+   - **Project Name:** por ejemplo `control-inventario-sigma` (backend).
    - **Root Directory:** `server` (obligatorio).
    - **Framework Preset:** Other.
-   - **Build Command:** dejar el que viene en `server/vercel.json` o poner en la UI:
-     ```bash
-     cd ../packages/shared && npm install && npm run build && cd ../../server && npm install && npm run build
-     ```
-   - **Output Directory:** dejar **vacío** (no usar `public` ni otro; la API es función serverless).
-   - **Install Command:** puede dejarse por defecto; el build ya instala en `shared` y en `server`.
+   - **Build Command:** el definido en `server/vercel.json` (incluye build de shared, build del server y generación de `.vercel/output`). No lo cambies en la UI salvo que uses el mismo.
+   - **Output Directory:** `.vercel/output` (debe coincidir con `outputDirectory` de `server/vercel.json`).
+   - **Install Command:** por defecto; el build instala en `shared` y en `server`.
 
 4. **Variables de entorno** (Settings → Environment Variables), para **Production** (y Preview si quieres):
 

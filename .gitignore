@@ -16,6 +16,7 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+.vercel/
 # Server compilado en raíz (outDir .)
 server/index.js
 server/index.d.ts
