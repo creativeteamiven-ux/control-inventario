@@ -10,13 +10,18 @@ import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
 
 const router = Router();
 const prisma = new PrismaClient();
-const uploadsDir = path.join(process.cwd(), 'uploads');
+// En Vercel el sistema de archivos es read-only excepto /tmp; usar /tmp para no romper el arranque
+const uploadsDir = process.env.VERCEL ? path.join('/tmp', 'uploads') : path.join(process.cwd(), 'uploads');
 const imagesDir = path.join(uploadsDir, 'images');
 const docsDir = path.join(uploadsDir, 'documents');
 
-[uploadsDir, imagesDir, docsDir].forEach((d) => {
-  if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
-});
+try {
+  [uploadsDir, imagesDir, docsDir].forEach((d) => {
+    if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+  });
+} catch {
+  // En entornos serverless sin /tmp escribible, omitir; los endpoints de upload fallarán al usarse
+}
 
 const storageImages = multer.memoryStorage();
 const storageDocs = multer.diskStorage({

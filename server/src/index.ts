@@ -9,6 +9,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
+import { PrismaClient } from '@prisma/client';
 import authRouter from './routes/auth.js';
 import devicesRouter from './routes/devices.js';
 import categoriesRouter from './routes/categories.js';
@@ -79,6 +80,24 @@ app.use(
   })
 );
 app.use(express.json());
+
+// Diagnóstico: comprobar que la API y la DB responden
+const prisma = new PrismaClient();
+app.get('/api/health', async (_req, res) => {
+  const origin = _req.headers.origin;
+  if (origin && isAllowedOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ ok: true, db: 'connected' });
+  } catch (e) {
+    const err = e as Error;
+    console.error('[Health] DB error:', err.message);
+    res.status(500).json({ ok: false, db: 'error', message: err.message });
+  }
+});
 
 // Rutas API
 app.use('/api/auth', authRouter);
