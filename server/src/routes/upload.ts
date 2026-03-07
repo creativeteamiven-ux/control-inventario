@@ -10,22 +10,40 @@ import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
 
 const router = Router();
 const prisma = new PrismaClient();
-// En Vercel el sistema de archivos es read-only excepto /tmp; usar /tmp para no romper el arranque
-const uploadsDir = process.env.VERCEL ? path.join('/tmp', 'uploads') : path.join(process.cwd(), 'uploads');
+// En Vercel no crear carpetas al cargar el módulo (evita FUNCTION_INVOCATION_FAILED al refrescar)
+const isVercel = process.env.VERCEL === '1' || process.env.VERCEL === 'true';
+const uploadsDir = isVercel ? path.join('/tmp', 'uploads') : path.join(process.cwd(), 'uploads');
 const imagesDir = path.join(uploadsDir, 'images');
 const docsDir = path.join(uploadsDir, 'documents');
 
-try {
-  [uploadsDir, imagesDir, docsDir].forEach((d) => {
-    if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
-  });
-} catch {
-  // En entornos serverless sin /tmp escribible, omitir; los endpoints de upload fallarán al usarse
+if (!isVercel) {
+  try {
+    [uploadsDir, imagesDir, docsDir].forEach((d) => {
+      if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+    });
+  } catch {
+    // Ignorar si no se puede crear (permisos, etc.)
+  }
+}
+
+/** En Vercel, crear carpetas solo al usarlas (no al cargar el módulo). */
+function ensureUploadDirs(): void {
+  if (!isVercel) return;
+  try {
+    [uploadsDir, imagesDir, docsDir].forEach((d) => {
+      if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+    });
+  } catch {
+    // /tmp puede no estar disponible en algunos entornos
+  }
 }
 
 const storageImages = multer.memoryStorage();
 const storageDocs = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, docsDir),
+  destination: (_req, _file, cb) => {
+    ensureUploadDirs();
+    cb(null, docsDir);
+  },
   filename: (_req, file, cb) => cb(null, `${uuidv4()}-${file.originalname}`),
 });
 
@@ -60,6 +78,7 @@ router.post('/images', requireRole('ADMIN', 'MANAGER'), uploadImages.array('imag
     if (!files?.length) throw new AppError(400, 'No se enviaron imágenes');
     const order = parseInt(req.body.order as string) || 0;
     const results: { url: string; id: string }[] = [];
+    ensureUploadDirs();
     for (let i = 0; i < files.length; i++) {
       const buf = await sharp(files[i].buffer)
         .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
