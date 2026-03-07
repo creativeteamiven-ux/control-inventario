@@ -14,7 +14,7 @@ Usa la **misma base Neon** que en desarrollo. Dos proyectos en Vercel, mismo rep
 
 ## 2. Vercel – Proyecto BACKEND (API)
 
-La app Express se despliega como una sola función serverless. La config está en **`server/vercel.json`**: entrada `dist/index.js`, carpeta `dist/**` incluida en el bundle, y todas las rutas enviadas a esa función.
+La app Express se despliega como una sola función serverless. La config está en **`server/vercel.json`**: el build genera `index.js` en la raíz de `server`, y `builds` + `routes` envían todo el tráfico a esa función. **Output Directory** en Vercel debe estar vacío.
 
 1. En [Vercel](https://vercel.com) → **Add New** → **Project**.
 2. Importa el repo de GitHub (el mismo que usas para el código).
