@@ -17,13 +17,13 @@ El backend (API Node.js + Express) se despliega en [Render](https://render.com) 
 3. Configuración:
    - **Name:** `control-inventario-api` (o el que prefieras).
    - **Region:** Oregon (o la más cercana a tus usuarios).
-   - **Root Directory:** `server`
+   - **Root Directory:** déjalo **vacío** (raíz del repo), para que el build acceda a `packages/shared` y `server`.
    - **Runtime:** Node
    - **Build Command:**
      ```bash
-     cd ../packages/shared && npm install && npm run build && cd ../../server && npm install && npx prisma generate && npm run build
+     cd packages/shared && npm install && npm run build && cd ../server && npm install && npx prisma generate && npm run build
      ```
-   - **Start Command:** `node index.js`
+   - **Start Command:** `cd server && node index.js`
    - **Instance Type:** Free o Starter según necesidad.
 
 4. **Environment Variables** (Settings → Environment):

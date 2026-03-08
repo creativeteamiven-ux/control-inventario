@@ -1,15 +1,14 @@
 # Backend API - Control de Inventario (SoundVault)
-# https://docs.render.com/blueprint-spec
-# Conecta el repo y crea un Web Service; las variables de entorno se configuran en el Dashboard.
+# Sin rootDir para que el build tenga acceso a packages/shared (monorepo).
+# Conecta el repo y en el Dashboard añade DATABASE_URL, JWT_SECRET, REFRESH_SECRET, CLIENT_URL.
 
 services:
   - type: web
     runtime: node
     name: control-inventario-api
-    rootDir: server
     region: oregon
-    buildCommand: cd ../packages/shared && npm install && npm run build && cd ../../server && npm install && npx prisma generate && npm run build
-    startCommand: node index.js
+    buildCommand: cd packages/shared && npm install && npm run build && cd ../server && npm install && npx prisma generate && npm run build
+    startCommand: cd server && node index.js
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
