@@ -25,6 +25,7 @@ export default function Movements() {
   const [importing, setImporting] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [cart, setCart] = useState<CartDevice[]>([]);
+  const [selectedCartIds, setSelectedCartIds] = useState<Set<string>>(new Set());
   const [validationResult, setValidationResult] = useState<ValidateResult | null>(null);
   const [fileToImport, setFileToImport] = useState<File | null>(null);
 
@@ -157,8 +158,36 @@ export default function Movements() {
       </div>
       <TransferCart
         items={cart}
-        onRemove={(id) => setCart((prev) => prev.filter((d) => d.id !== id))}
-        onClear={() => setCart([])}
+        onRemove={(id) => {
+          setCart((prev) => prev.filter((d) => d.id !== id));
+          setSelectedCartIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+        }}
+        onClear={() => {
+          setCart([]);
+          setSelectedCartIds(new Set());
+        }}
+        selectedIds={selectedCartIds}
+        onToggleSelect={(id) => {
+          setSelectedCartIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+          });
+        }}
+        onSelectAll={() => {
+          if (selectedCartIds.size === cart.length) setSelectedCartIds(new Set());
+          else setSelectedCartIds(new Set(cart.map((d) => d.id)));
+        }}
+        onRemoveSelected={() => {
+          if (selectedCartIds.size === 0) return;
+          setCart((prev) => prev.filter((d) => !selectedCartIds.has(d.id)));
+          setSelectedCartIds(new Set());
+        }}
       />
       <DevicePickerModal
         open={pickerOpen}
@@ -246,36 +275,82 @@ export default function Movements() {
           Cargando...
         </div>
       ) : (
-        <div className="bg-card rounded-xl border border-border overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left py-4 px-4 font-medium text-muted">Equipo</th>
-                <th className="text-left py-4 px-4 font-medium text-muted">Tipo</th>
-                <th className="text-left py-4 px-4 font-medium text-muted">Razón</th>
-                <th className="text-left py-4 px-4 font-medium text-muted">Usuario</th>
-                <th className="text-left py-4 px-4 font-medium text-muted">Fecha</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((m: { id: string; type: string; reason: string; createdAt: string; device: { name: string }; user: { name: string } }) => (
-                <tr key={m.id} className="border-b border-border hover:bg-card-hover/50">
-                  <td className="py-3 px-4 font-medium">{m.device?.name}</td>
-                  <td className="py-3 px-4">{m.type?.replace(/_/g, ' ')}</td>
-                  <td className="py-3 px-4">{m.reason}</td>
-                  <td className="py-3 px-4 text-sm">{m.user?.name}</td>
-                  <td className="py-3 px-4 text-sm text-muted">{format(new Date(m.createdAt), 'dd MMM yyyy HH:mm', { locale: es })}</td>
+        <>
+          {/* Vista móvil: cards por movimiento */}
+          <div className="md:hidden space-y-3">
+            {items.length === 0 ? (
+              <div className="bg-card rounded-xl border border-border p-12 text-center text-muted flex flex-col items-center gap-2">
+                <ArrowLeftRight className="h-12 w-12" />
+                <p>No hay movimientos registrados</p>
+              </div>
+            ) : (
+              items.map((m: { id: string; type: string; reason: string; createdAt: string; device: { name: string }; user: { name: string } }) => (
+                <div
+                  key={m.id}
+                  className="bg-card rounded-xl border border-border p-4 space-y-3"
+                >
+                  <p className="font-medium text-foreground leading-tight">
+                    {m.device?.name}
+                  </p>
+                  <dl className="grid gap-1.5 text-sm">
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted shrink-0">Tipo</dt>
+                      <dd className="text-foreground text-right font-medium">
+                        {MOVEMENT_TYPE_LABELS[m.type] ?? m.type?.replace(/_/g, ' ')}
+                      </dd>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <dt className="text-muted">Razón</dt>
+                      <dd className="text-foreground">{m.reason}</dd>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <dt className="text-muted">Usuario</dt>
+                      <dd className="text-foreground break-words">{m.user?.name}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted shrink-0">Fecha</dt>
+                      <dd className="text-muted text-right text-xs">
+                        {format(new Date(m.createdAt), "dd MMM yyyy HH:mm", { locale: es })}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Vista desktop: tabla */}
+          <div className="hidden md:block bg-card rounded-xl border border-border overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left py-4 px-4 font-medium text-muted">Equipo</th>
+                  <th className="text-left py-4 px-4 font-medium text-muted">Tipo</th>
+                  <th className="text-left py-4 px-4 font-medium text-muted">Razón</th>
+                  <th className="text-left py-4 px-4 font-medium text-muted">Usuario</th>
+                  <th className="text-left py-4 px-4 font-medium text-muted">Fecha</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {items.length === 0 && (
-            <div className="p-12 text-center text-muted flex flex-col items-center gap-2">
-              <ArrowLeftRight className="h-12 w-12" />
-              <p>No hay movimientos registrados</p>
-            </div>
-          )}
-        </div>
+              </thead>
+              <tbody>
+                {items.map((m: { id: string; type: string; reason: string; createdAt: string; device: { name: string }; user: { name: string } }) => (
+                  <tr key={m.id} className="border-b border-border hover:bg-card-hover/50">
+                    <td className="py-3 px-4 font-medium">{m.device?.name}</td>
+                    <td className="py-3 px-4">{MOVEMENT_TYPE_LABELS[m.type] ?? m.type?.replace(/_/g, ' ')}</td>
+                    <td className="py-3 px-4">{m.reason}</td>
+                    <td className="py-3 px-4 text-sm">{m.user?.name}</td>
+                    <td className="py-3 px-4 text-sm text-muted">{format(new Date(m.createdAt), 'dd MMM yyyy HH:mm', { locale: es })}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {items.length === 0 && (
+              <div className="p-12 text-center text-muted flex flex-col items-center gap-2">
+                <ArrowLeftRight className="h-12 w-12" />
+                <p>No hay movimientos registrados</p>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </motion.div>
   );
