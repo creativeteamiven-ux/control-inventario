@@ -34,7 +34,7 @@ interface SidebarProps {
 }
 
 function NavContent({
-  collapsed,
+  collapsed: _collapsed,
   showLabels,
   onItemClick,
 }: {
