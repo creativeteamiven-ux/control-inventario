@@ -1,6 +1,7 @@
 # Despliegue en Vercel + Neon (misma cuenta GitHub)
 
-Usa la **misma base Neon** que en desarrollo. Dos proyectos en Vercel, mismo repositorio Git.
+**Backend:** se recomienda desplegarlo en **Render** (ver [docs/RENDER.md](RENDER.md)).  
+**Frontend:** Vercel. **Base de datos:** Neon (la misma que en desarrollo).
 
 ---
 

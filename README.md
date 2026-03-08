@@ -80,6 +80,11 @@ docker-compose up -d
 - Frontend: http://localhost
 - Backend: http://localhost:3001
 
+## Despliegue
+
+- **Backend (API):** [docs/RENDER.md](docs/RENDER.md) — Render Web Service.
+- **Frontend + BD:** [docs/VERCEL_NEON.md](docs/VERCEL_NEON.md) — Vercel + Neon (frontend); la API puede ir en Render.
+
 ## Estructura
 
 ```

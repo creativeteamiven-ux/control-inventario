@@ -99,6 +99,16 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
+// Raíz: mensaje para quien abra la URL del backend en el navegador
+app.get('/', (_req, res) => {
+  res.json({
+    name: 'SoundVault API',
+    version: '1.0',
+    docs: 'Esta es la API del backend. Usa el frontend para acceder a la aplicación.',
+    health: '/api/health',
+  });
+});
+
 // Rutas API
 app.use('/api/auth', authRouter);
 app.use('/api/devices', devicesRouter);
@@ -132,7 +142,8 @@ app.use(errorHandler);
 export default app;
 
 if (!process.env.VERCEL) {
-  app.listen(PORT, () => {
-    console.log(`🚀 SoundVault API running on http://localhost:${PORT}`);
+  const host = process.env.RENDER ? '0.0.0.0' : 'localhost';
+  app.listen(PORT, host, () => {
+    console.log(`🚀 SoundVault API running on http://${host}:${PORT}`);
   });
 }
