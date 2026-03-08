@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Package, Grid3X3, List, Plus, Search, Download, Upload, Truck, FolderTree, AlertCircle } from 'lucide-react';
+import { Package, Grid3X3, List, Plus, Search, Download, Upload, Truck, FolderTree, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 import { addToStoredCart, addManyToStoredCart, getStoredCart } from '@/lib/transferCart';
 import { api } from '@/lib/api';
 import AddDeviceModal from '@/components/AddDeviceModal';
@@ -10,7 +10,7 @@ import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { deviceStatusLabel, deviceLocationLabel, DEVICE_STATUS_LABELS } from '@/lib/statusLabels';
+import { deviceStatusLabel, deviceLocationLabel, DEVICE_STATUS_LABELS, DEVICE_LOCATION_LABELS } from '@/lib/statusLabels';
 
 const STATUS_BADGE: Record<string, string> = {
   ACTIVE: 'bg-green-500/20 text-green-400',
@@ -40,6 +40,11 @@ export default function Inventory() {
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [needsReview, setNeedsReview] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [importErrors, setImportErrors] = useState<{ row: number; message: string }[] | null>(null);
+  type ValidationRow = { row: number; valid: boolean; errors: string[]; corrections: { field: string; from: string; to: string }[] };
+  type ValidateResult = { headerErrors?: string; totalRows: number; validCount: number; invalidCount: number; rows: ValidationRow[] };
+  const [validationResult, setValidationResult] = useState<ValidateResult | null>(null);
+  const [fileToImport, setFileToImport] = useState<File | null>(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatusOpen, setBulkStatusOpen] = useState(false);
@@ -82,7 +87,7 @@ export default function Inventory() {
       const url = URL.createObjectURL(data);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'plantilla-equipos-soundvault.xlsx';
+      a.download = 'plantilla-equipos-thewarehouse.xlsx';
       a.click();
       URL.revokeObjectURL(url);
       toast.success('Plantilla descargada');
@@ -95,21 +100,70 @@ export default function Inventory() {
     const file = e.target.files?.[0];
     if (!file) return;
     setImporting(true);
+    setImportErrors(null);
+    setValidationResult(null);
+    setFileToImport(null);
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const { data } = await api.post('/api/import/devices', formData, {
+      const { data } = await api.post<ValidateResult>('/api/import/devices/validate', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
-      toast.success(`${data.success} equipos importados correctamente`);
-      if (data.errors?.length) toast.error(`${data.errors.length} filas con errores`);
+      setValidationResult(data);
+      setFileToImport(file);
+      if (data.headerErrors) {
+        toast.error(data.headerErrors);
+      } else if (data.invalidCount > 0 && data.validCount === 0) {
+        toast.error('El archivo tiene errores. Revisa el resultado de validación antes de importar.');
+      } else if (data.validCount > 0) {
+        toast.success(`Validación: ${data.validCount} fila(s) correcta(s)${data.invalidCount > 0 ? `, ${data.invalidCount} con error(es)` : ''}. Revisa y confirma para importar.`);
+      }
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error al importar';
+      const ax = err as { response?: { status?: number; data?: { error?: string; message?: string } } };
+      const resData = ax?.response?.data;
+      const msg = (typeof resData?.error === 'string' && resData.error) || (typeof resData?.message === 'string' && resData.message) || 'Error al validar el archivo';
       toast.error(msg);
+      console.error('Error al validar plantilla:', resData, err);
     } finally {
       setImporting(false);
       e.target.value = '';
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!fileToImport) return;
+    setImporting(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', fileToImport);
+      const { data } = await api.post<{ success: number; errors?: { row: number; message: string }[] }>('/api/import/devices', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
+      if (data.success > 0) {
+        toast.success(`${data.success} equipo(s) importados correctamente`);
+      }
+      if (data.errors?.length) {
+        setImportErrors(data.errors);
+        toast.error(`${data.errors.length} fila(s) con error al guardar. Revisa el detalle.`, { duration: 6000 });
+        console.table(data.errors, ['row', 'message']);
+      } else {
+        setImportErrors(null);
+      }
+      setValidationResult(null);
+      setFileToImport(null);
+    } catch (err: unknown) {
+      const ax = err as { response?: { status?: number; data?: { error?: string; message?: string; errors?: { row: number; message: string }[] } } };
+      const resData = ax?.response?.data;
+      const msg = (typeof resData?.error === 'string' && resData.error) || (typeof resData?.message === 'string' && resData.message) || 'Error al importar';
+      toast.error(msg, { duration: 6000 });
+      if (resData?.errors?.length) {
+        setImportErrors(resData.errors);
+        console.table(resData.errors, ['row', 'message']);
+      }
+      console.error('Error al importar plantilla. Status:', ax?.response?.status, 'Respuesta:', resData, err);
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -175,7 +229,7 @@ export default function Inventory() {
       const url = URL.createObjectURL(data);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'plantilla-mantenimiento-soundvault.xlsx';
+      a.download = 'plantilla-mantenimiento-thewarehouse.xlsx';
       a.click();
       URL.revokeObjectURL(url);
       toast.success('Plantilla descargada con los equipos seleccionados');
@@ -393,12 +447,206 @@ export default function Inventory() {
         </div>
       )}
 
+      {/* Modal: resultado de validación (antes de importar) */}
+      {validationResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => { if (!importing) { setValidationResult(null); setFileToImport(null); } }}>
+          <div className="bg-card rounded-xl border border-border shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b border-border flex items-center justify-between shrink-0">
+              <h3 className="font-semibold text-lg text-foreground">
+                Validación del archivo
+              </h3>
+              <Button variant="ghost" size="sm" onClick={() => { setValidationResult(null); setFileToImport(null); }} disabled={importing}>
+                Cerrar
+              </Button>
+            </div>
+            <div className="overflow-y-auto p-4 flex-1 min-h-0 space-y-4">
+              {validationResult.headerErrors ? (
+                <p className="text-destructive font-medium">{validationResult.headerErrors}</p>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-4 items-center">
+                    <span className="text-muted">Total filas: <strong className="text-foreground">{validationResult.totalRows}</strong></span>
+                    <span className="text-green-600 flex items-center gap-1">
+                      <CheckCircle className="h-4 w-4" /> Válidas: <strong>{validationResult.validCount}</strong>
+                    </span>
+                    {validationResult.invalidCount > 0 && (
+                      <span className="text-red-600 flex items-center gap-1">
+                        <XCircle className="h-4 w-4" /> Con error: <strong>{validationResult.invalidCount}</strong>
+                      </span>
+                    )}
+                  </div>
+                  {validationResult.invalidCount > 0 && (
+                    <div>
+                      <h4 className="font-medium text-foreground mb-2">Errores por fila (corrige en Excel y vuelve a validar)</h4>
+                      <ul className="space-y-1.5 text-sm max-h-48 overflow-y-auto">
+                        {validationResult.rows.filter((r) => !r.valid).map((r, i) => (
+                          <li key={i} className="flex gap-2 py-1.5 px-2 rounded bg-red-500/10 border border-red-500/30">
+                            <span className="font-mono text-primary shrink-0">Fila {r.row}</span>
+                            <span className="text-foreground">{r.errors.join('. ')}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {validationResult.rows.some((r) => r.corrections.length > 0) && (
+                    <div>
+                      <h4 className="font-medium text-foreground mb-2">Correcciones que se aplicarán al importar</h4>
+                      <p className="text-sm text-muted mb-2">Estos valores se ajustarán automáticamente según las reglas del sistema.</p>
+                      <ul className="space-y-1.5 text-sm max-h-48 overflow-y-auto">
+                        {validationResult.rows.flatMap((r) =>
+                          r.corrections.map((c, j) => (
+                            <li key={`${r.row}-${j}`} className="flex gap-2 py-1.5 px-2 rounded bg-primary/10 border border-primary/30">
+                              <span className="font-mono text-primary shrink-0">Fila {r.row}</span>
+                              <span className="text-foreground">
+                                {c.field}: &quot;{c.from}&quot; → {(c.field === 'Estado' ? deviceStatusLabel(c.to) : (DEVICE_LOCATION_LABELS[c.to] ?? c.to))}
+                              </span>
+                            </li>
+                          ))
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            {!validationResult.headerErrors && (
+              <div className="p-4 border-t border-border flex gap-2 justify-end shrink-0">
+                <Button variant="outline" onClick={() => { setValidationResult(null); setFileToImport(null); }} disabled={importing}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleConfirmImport} disabled={importing || validationResult.validCount === 0}>
+                  {importing ? 'Importando...' : `Importar ${validationResult.validCount} fila(s)`}
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal: errores de importación */}
+      {importErrors && importErrors.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setImportErrors(null)}>
+          <div className="bg-card rounded-xl border border-border shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b border-border flex items-center justify-between shrink-0">
+              <h3 className="font-semibold text-lg text-foreground">
+                Errores al importar ({importErrors.length} filas)
+              </h3>
+              <Button variant="ghost" size="sm" onClick={() => setImportErrors(null)}>
+                Cerrar
+              </Button>
+            </div>
+            <div className="overflow-y-auto p-4 flex-1 min-h-0">
+              <p className="text-sm text-muted mb-3">
+                Revisa la plantilla: cada fila indica el número de fila en Excel y el motivo del error. Corrige y vuelve a importar.
+              </p>
+              <ul className="space-y-1.5 text-sm">
+                {importErrors.map((err, i) => (
+                  <li key={i} className="flex gap-2 py-1.5 px-2 rounded bg-card-hover/50 border border-border/50">
+                    <span className="font-mono text-primary shrink-0">Fila {err.row}</span>
+                    <span className="text-foreground break-words">{err.message}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="bg-card rounded-xl border border-border p-12 text-center text-muted">
           Cargando inventario...
         </div>
-      ) : view === 'table' ? (
-        <div className="bg-card rounded-xl border border-border overflow-hidden">
+      ) : (
+        <>
+      {/* Vista móvil: cards con selección, Agregar al carrito y Ver */}
+      <div className="md:hidden space-y-3">
+        <div className="flex items-center gap-3 px-1 pb-1">
+          <label className="flex items-center gap-2 min-h-touch min-w-touch cursor-pointer">
+            <input
+              type="checkbox"
+              checked={allOnPageSelected}
+              ref={(el) => { if (el) el.indeterminate = selectedIds.size > 0 && !allOnPageSelected; }}
+              onChange={toggleSelectAll}
+              className="h-5 w-5 rounded border-border shrink-0"
+            />
+            <span className="text-sm font-medium text-foreground">Seleccionar todo (página)</span>
+          </label>
+        </div>
+        {devices.map((d: { id: string; internalCode: string; name: string; brand: string; model: string; category: { name: string }; status: string; condition?: number; observation?: string | null; images: { url: string }[] }) => {
+          const hasObservation = d.status === 'ACTIVE' && (!!(d.observation?.trim()) || (d.condition ?? 100) < 70);
+          const inCart = inTransferCart.has(d.id);
+          return (
+            <div
+              key={d.id}
+              className={cn(
+                'bg-card rounded-xl border overflow-hidden flex flex-col',
+                selectedIds.has(d.id) ? 'ring-2 ring-primary border-primary' : 'border-border'
+              )}
+            >
+              <div className="flex gap-3 p-3">
+                <label className="flex shrink-0 items-center justify-center min-h-touch min-w-touch cursor-pointer self-start mt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(d.id)}
+                    onChange={() => toggleOne(d.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="h-5 w-5 rounded border-border"
+                  />
+                </label>
+                <Link to={`/inventory/${d.id}`} className="flex min-w-0 flex-1">
+                  <div className="flex gap-3">
+                    <div className="h-16 w-16 shrink-0 rounded-lg bg-card-hover flex items-center justify-center overflow-hidden">
+                      {d.images?.[0]?.url ? (
+                        <img src={d.images[0].url} alt={d.name} className="h-full w-full object-cover" />
+                      ) : (
+                        <Package className="h-8 w-8 text-muted" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-mono text-sm text-primary truncate">{d.internalCode}</p>
+                      <p className="font-medium text-foreground truncate">{d.name}</p>
+                      <p className="text-xs text-muted truncate">{d.brand} {d.model}</p>
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        <span className={cn('px-2 py-0.5 rounded text-xs font-medium', STATUS_BADGE[d.status] ?? 'bg-muted')}>
+                          {deviceStatusLabel(d.status)}
+                        </span>
+                        {hasObservation && (
+                          <span className="px-2 py-0.5 rounded text-xs bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center gap-0.5">
+                            <AlertCircle className="h-3 w-3" /> Obs.
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              </div>
+              <div className="flex gap-2 p-3 pt-0">
+                <Link to={`/inventory/${d.id}`} className="flex-1 min-w-0">
+                  <Button variant="outline" size="sm" className="w-full min-h-touch">
+                    Ver detalle
+                  </Button>
+                </Link>
+                <Button
+                  size="sm"
+                  variant={inCart ? 'secondary' : 'default'}
+                  className={cn(
+                    'min-h-touch shrink-0',
+                    inCart && 'bg-orange-500/20 text-orange-500 border border-orange-500/50 hover:bg-orange-500/30'
+                  )}
+                  onClick={(e) => { e.preventDefault(); addToTransfer(d, e); }}
+                >
+                  <Truck className="h-4 w-4 mr-1.5" />
+                  {inCart ? 'En carrito' : 'Al carrito'}
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Vista desktop: tabla o grid */}
+      {view === 'table' ? (
+        <div className="hidden md:block bg-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -506,7 +754,7 @@ export default function Inventory() {
           )}
         </div>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="hidden md:grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {devices.map((d: { id: string; internalCode: string; name: string; brand: string; model: string; category: { name: string; color: string }; status: string; condition?: number; observation?: string | null; images: { url: string }[] }) => {
             const hasObservation = d.status === 'ACTIVE' && (!!(d.observation?.trim()) || (d.condition ?? 100) < 70);
             return (
@@ -556,10 +804,10 @@ export default function Inventory() {
                 variant="secondary"
                 size="icon"
                 className={cn(
-                  'absolute top-2 right-2 h-8 w-8 transition-opacity',
+                  'absolute top-2 right-2 h-8 w-8 transition-opacity opacity-100 md:opacity-0 md:group-hover:opacity-100',
                   inTransferCart.has(d.id)
-                    ? 'opacity-100 text-orange-500 bg-orange-500/20 border-orange-500/50'
-                    : 'opacity-0 group-hover:opacity-100'
+                    ? 'text-orange-500 bg-orange-500/20 border-orange-500/50'
+                    : ''
                 )}
                 onClick={(e) => addToTransfer(d, e)}
                 title={inTransferCart.has(d.id) ? 'En carrito de traslado' : 'Agregar al traslado'}
@@ -569,6 +817,8 @@ export default function Inventory() {
             </div>
           );})}
         </div>
+      )}
+        </>
       )}
 
       <AddDeviceModal open={addModalOpen} onOpenChange={setAddModalOpen} />

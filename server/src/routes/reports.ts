@@ -42,7 +42,7 @@ router.get('/inventory/pdf', requireRole('ADMIN', 'MANAGER'), async (req, res, n
       doc.on('error', reject);
     });
 
-    doc.fontSize(18).fillColor('#1E3A5F').text('SoundVault - Reporte de Inventario', { align: 'center' });
+    doc.fontSize(18).fillColor('#1E3A5F').text('The Warehouse - Reporte de Inventario', { align: 'center' });
     doc.moveDown(0.5);
     doc.fontSize(10).fillColor('#666').text(`Generado: ${new Date().toLocaleString('es-CL')}`, { align: 'center' });
     doc.moveDown(2);
@@ -96,13 +96,13 @@ router.get('/inventory/pdf', requireRole('ADMIN', 'MANAGER'), async (req, res, n
     });
 
     doc.moveDown(2);
-    doc.fontSize(10).fillColor('#666').text(`Total equipos: ${devices.length} | SoundVault - Iglesia & Estudio de Grabación`, { align: 'center' });
+    doc.fontSize(10).fillColor('#666').text(`Total equipos: ${devices.length} | The Warehouse`, { align: 'center' });
 
     doc.end();
 
     const pdf = await pdfPromise;
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename=inventario-soundvault.pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=inventario-thewarehouse.pdf');
     res.send(pdf);
   } catch (e) {
     next(e);

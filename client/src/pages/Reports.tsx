@@ -21,7 +21,7 @@ export default function Reports() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'inventario-soundvault.pdf';
+      a.download = 'inventario-thewarehouse.pdf';
       a.click();
       URL.revokeObjectURL(url);
       toast.success('PDF descargado');

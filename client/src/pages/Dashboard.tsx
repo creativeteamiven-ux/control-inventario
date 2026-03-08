@@ -75,9 +75,9 @@ export default function Dashboard() {
     return (
       <div className="space-y-6">
         <h1 className="font-display text-2xl font-bold text-foreground">Dashboard</h1>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-24 rounded-lg bg-card animate-pulse" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="h-24 rounded-xl bg-card animate-pulse" />
           ))}
         </div>
       </div>
@@ -114,7 +114,7 @@ export default function Dashboard() {
 
       <div>
         <h2 className="font-display font-semibold text-lg mb-4">Resumen</h2>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {kpis.map((kpi, i) => {
             const key = `kpi_${kpi.id}`;
             const isVisible = visible[key] !== false;
@@ -143,7 +143,7 @@ export default function Dashboard() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="absolute top-2 right-2 h-8 w-8 text-muted hover:text-foreground"
+                      className="absolute top-2 right-2 min-h-touch min-w-touch md:min-h-0 md:min-w-0 md:h-8 md:w-8 text-muted hover:text-foreground"
                       onClick={() => toggle(key)}
                       title="Ocultar tarjeta"
                     >
@@ -170,22 +170,22 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        <div className="bg-card rounded-xl border border-border p-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 overflow-x-hidden">
+        <div className="bg-card rounded-xl border border-border p-4 md:p-6 min-w-0">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display font-semibold text-lg">Distribución por categoría</h2>
             <Button
               variant="ghost"
               size="icon"
+              className="min-h-touch min-w-touch md:min-h-0 md:min-w-0 text-muted hover:text-foreground"
               onClick={() => toggle('category')}
               title={visible.category ? 'Ocultar gráfica' : 'Mostrar gráfica'}
-              className="text-muted hover:text-foreground"
             >
               {visible.category ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
             </Button>
           </div>
           {visible.category && (
-            <div className="h-64">
+            <div className="h-56 sm:h-64 overflow-x-auto">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={2} dataKey="value">
@@ -198,25 +198,25 @@ export default function Dashboard() {
             </div>
           )}
         </div>
-        <div className="bg-card rounded-xl border border-border p-6">
+        <div className="bg-card rounded-xl border border-border p-4 md:p-6 min-w-0">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display font-semibold text-lg">Equipos por estado</h2>
             <Button
               variant="ghost"
               size="icon"
+              className="min-h-touch min-w-touch md:min-h-0 md:min-w-0 text-muted hover:text-foreground"
               onClick={() => toggle('status')}
               title={visible.status ? 'Ocultar gráfica' : 'Mostrar gráfica'}
-              className="text-muted hover:text-foreground"
             >
               {visible.status ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
             </Button>
           </div>
           {visible.status && (
-            <div className="h-64">
+            <div className="h-56 sm:h-64 overflow-x-auto">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData} layout="vertical" margin={{ left: 80 }}>
-                  <XAxis type="number" stroke="#64748B" />
-                  <YAxis type="category" dataKey="name" stroke="#64748B" width={70} />
+                <BarChart data={barData} layout="vertical" margin={{ left: 60 }}>
+                  <XAxis type="number" stroke="#64748B" tick={{ fontSize: 12 }} />
+                  <YAxis type="category" dataKey="name" stroke="#64748B" width={60} tick={{ fontSize: 12 }} />
                   <Bar dataKey="count" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -225,18 +225,18 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="bg-card rounded-xl border border-border p-6">
+      <div className="bg-card rounded-xl border border-border p-4 md:p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-amber-500" />
+            <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
             <h2 className="font-display font-semibold text-lg">Alertas activas</h2>
           </div>
           <Button
             variant="ghost"
             size="icon"
+            className="min-h-touch min-w-touch md:min-h-0 md:min-w-0 text-muted hover:text-foreground"
             onClick={() => toggle('alerts')}
             title={visible.alerts ? 'Ocultar sección' : 'Mostrar sección'}
-            className="text-muted hover:text-foreground"
           >
             {visible.alerts ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
           </Button>

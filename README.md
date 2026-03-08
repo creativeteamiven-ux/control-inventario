@@ -1,6 +1,6 @@
-# SoundVault — Sistema de Gestión de Inventario de Audio
+# The Warehouse — Sistema de Gestión de Inventario
 
-Sistema full-stack para gestionar el inventario de equipos de audio de iglesia y estudio de grabación. Desplegable en subdominio (ej: inventario.iglesia.com).
+Sistema full-stack para gestionar el inventario de equipos. Desplegable en subdominio (ej: inventario.tudominio.com).
 
 > **Especificación completa del proyecto:** [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md) — stack, diseño, módulos, BD y features. Úsala como referencia (ej: `@docs/PROJECT_SPEC.md`) en el asistente.
 

@@ -31,7 +31,7 @@ export default function Login() {
     setSubmitting(true);
     try {
       await login(email, password);
-      toast.success('Bienvenido a DFP RECORDS');
+      toast.success('Bienvenido a The Warehouse');
       navigate('/dashboard');
     } catch (err: unknown) {
       const ax = err as { response?: { status?: number; data?: unknown } };
@@ -55,7 +55,7 @@ export default function Login() {
         <div className="flex flex-col items-center mb-8">
           <img
             src="/img/logo-dfp-records.png"
-            alt="DFP RECORDS"
+            alt="The Warehouse"
             className="h-20 w-auto max-w-[280px] object-contain mb-4"
           />
           <p className="text-muted mt-1">Gestión de Inventario de Audio</p>
@@ -68,7 +68,7 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@soundvault.com"
+                placeholder="admin@thewarehouse.com"
                 required
                 autoComplete="email"
               />
@@ -90,7 +90,7 @@ export default function Login() {
           </Button>
         </form>
         <p className="text-center text-sm text-muted mt-6">
-          Demo: admin@soundvault.com / admin123
+          Demo: admin@thewarehouse.com / admin123
         </p>
         <p className="text-center text-xs text-muted mt-2">
           Si es la primera vez, en la carpeta <code className="bg-muted px-1 rounded">server</code> ejecuta <code className="bg-muted px-1 rounded">npm run db:seed</code> para crear el usuario admin.

@@ -33,7 +33,7 @@ router.get('/equipment', (_req, res, next) => {
     ]);
     XLSX.utils.book_append_sheet(wb, ayuda, 'Valores validos');
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    res.setHeader('Content-Disposition', 'attachment; filename=plantilla-equipos-soundvault.xlsx');
+    res.setHeader('Content-Disposition', 'attachment; filename=plantilla-equipos-thewarehouse.xlsx');
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buf);
   } catch (e) {
@@ -71,8 +71,8 @@ router.get('/transfers', async (req, res, next) => {
 
     if (rows.length === 0) {
       rows = [
-        ['PA-001', 'Consola Behringer X32', 'STORAGE_ROOM', 'TRANSFER', 'MAIN_AUDITORIUM', 'Servicio dominical', 'admin@soundvault.com', '2025-02-27'],
-        ['REC-006', 'Interface Focusrite', 'STORAGE_ROOM', 'CHECK_OUT', 'RECORDING_STUDIO', 'Sesión de grabación', 'tecnico@soundvault.com', '2025-02-27'],
+        ['PA-001', 'Consola Behringer X32', 'STORAGE_ROOM', 'TRANSFER', 'MAIN_AUDITORIUM', 'Servicio dominical', 'admin@thewarehouse.com', '2025-02-27'],
+        ['REC-006', 'Interface Focusrite', 'STORAGE_ROOM', 'CHECK_OUT', 'RECORDING_STUDIO', 'Sesión de grabación', 'tecnico@thewarehouse.com', '2025-02-27'],
       ];
     }
 
@@ -89,7 +89,7 @@ router.get('/transfers', async (req, res, next) => {
     ]);
     XLSX.utils.book_append_sheet(wb, ayuda, 'Valores validos');
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    res.setHeader('Content-Disposition', 'attachment; filename=plantilla-traslados-soundvault.xlsx');
+    res.setHeader('Content-Disposition', 'attachment; filename=plantilla-traslados-thewarehouse.xlsx');
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buf);
   } catch (e) {
@@ -143,7 +143,7 @@ router.get('/maintenance', async (req, res, next) => {
     ]);
     XLSX.utils.book_append_sheet(wb, ayuda, 'Valores validos');
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    res.setHeader('Content-Disposition', 'attachment; filename=plantilla-mantenimiento-soundvault.xlsx');
+    res.setHeader('Content-Disposition', 'attachment; filename=plantilla-mantenimiento-thewarehouse.xlsx');
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buf);
   } catch (e) {

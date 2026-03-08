@@ -36,7 +36,7 @@ async function main() {
   const adminUser = await prisma.user.create({
     data: {
       name: 'Administrador SoundVault',
-      email: 'admin@soundvault.com',
+      email: 'admin@thewarehouse.com',
       password: hashedPassword,
       role: 'ADMIN',
       phone: '+56912345678',
@@ -46,7 +46,7 @@ async function main() {
   const managerUser = await prisma.user.create({
     data: {
       name: 'Juan Técnico',
-      email: 'tecnico@soundvault.com',
+      email: 'tecnico@thewarehouse.com',
       password: hashedPassword,
       role: 'TECHNICIAN',
       phone: '+56987654321',

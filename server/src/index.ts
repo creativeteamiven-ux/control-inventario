@@ -1,6 +1,6 @@
 /**
- * SoundVault - Backend API
- * Sistema de Gestión de Inventario de Audio
+ * The Warehouse - Backend API
+ * Sistema de Gestión de Inventario
  */
 import 'express-async-errors';
 import express from 'express';
@@ -144,6 +144,6 @@ export default app;
 if (!process.env.VERCEL) {
   const host = process.env.RENDER ? '0.0.0.0' : 'localhost';
   app.listen(PORT, host, () => {
-    console.log(`🚀 SoundVault API running on http://${host}:${PORT}`);
+    console.log(`🚀 The Warehouse API running on http://${host}:${PORT}`);
   });
 }

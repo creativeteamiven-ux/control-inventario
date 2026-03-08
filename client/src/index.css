@@ -3,7 +3,37 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    @apply overflow-x-hidden;
+  }
   body {
-    @apply bg-background text-foreground font-body antialiased;
+    @apply bg-background text-foreground font-body antialiased overflow-x-hidden;
+    font-size: 14px;
+  }
+  /* Evitar zoom en inputs en iOS (mínimo 16px) */
+  input, select, textarea, button {
+    font-size: max(16px, 1rem);
+  }
+  /* Touch targets mínimo 44x44px */
+  @media (max-width: 767px) {
+    button:not(.no-touch-target),
+    a[role="button"],
+    [role="button"] {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
+}
+
+.safe-area-pb {
+  padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+}
+
+/* Respetar preferencia de menos animación */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
