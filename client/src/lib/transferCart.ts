@@ -35,6 +35,14 @@ export function addManyToStoredCart(devices: CartDevice[]): number {
   return added;
 }
 
+export function setStoredCart(devices: CartDevice[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(devices));
+  } catch {
+    // ignore quota or parse errors
+  }
+}
+
 export function clearStoredCart(): void {
   localStorage.removeItem(STORAGE_KEY);
 }

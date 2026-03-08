@@ -9,7 +9,7 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import TransferCart, { type CartDevice } from '@/components/TransferCart';
 import DevicePickerModal from '@/components/DevicePickerModal';
-import { getStoredCart, clearStoredCart } from '@/lib/transferCart';
+import { getStoredCart, clearStoredCart, setStoredCart } from '@/lib/transferCart';
 import { DEVICE_LOCATION_LABELS } from '@/lib/statusLabels';
 
 type ValidationRow = { row: number; valid: boolean; errors: string[]; corrections: { field: string; from: string; to: string }[] };
@@ -24,7 +24,7 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
 export default function Movements() {
   const [importing, setImporting] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [cart, setCart] = useState<CartDevice[]>([]);
+  const [cart, setCart] = useState<CartDevice[]>(() => getStoredCart());
   const [selectedCartIds, setSelectedCartIds] = useState<Set<string>>(new Set());
   const [validationResult, setValidationResult] = useState<ValidateResult | null>(null);
   const [fileToImport, setFileToImport] = useState<File | null>(null);
@@ -32,15 +32,14 @@ export default function Movements() {
   useEffect(() => {
     const stored = getStoredCart();
     if (stored.length > 0) {
-      setCart((prev) => {
-        const ids = new Set(prev.map((d) => d.id));
-        const newOnes = stored.filter((d) => !ids.has(d.id));
-        return [...prev, ...newOnes];
-      });
-      clearStoredCart();
       toast.success(`${stored.length} equipo(s) agregado(s) desde el inventario`);
+      clearStoredCart();
     }
   }, []);
+
+  useEffect(() => {
+    setStoredCart(cart);
+  }, [cart]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 

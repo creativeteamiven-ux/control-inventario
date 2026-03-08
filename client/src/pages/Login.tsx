@@ -68,7 +68,7 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@thewarehouse.com"
+                placeholder="tu@email.com"
                 required
                 autoComplete="email"
               />
@@ -89,12 +89,6 @@ export default function Login() {
             {submitting ? 'Iniciando sesión...' : 'Iniciar sesión'}
           </Button>
         </form>
-        <p className="text-center text-sm text-muted mt-6">
-          Demo: admin@thewarehouse.com / admin123
-        </p>
-        <p className="text-center text-xs text-muted mt-2">
-          Si es la primera vez, en la carpeta <code className="bg-muted px-1 rounded">server</code> ejecuta <code className="bg-muted px-1 rounded">npm run db:seed</code> para crear el usuario admin.
-        </p>
       </div>
     </div>
   );

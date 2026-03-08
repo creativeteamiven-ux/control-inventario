@@ -92,7 +92,7 @@ export default function Header({ onMenuClick, searchOpen = false, onSearchToggle
             <p className="text-sm font-medium truncate">{user?.name}</p>
             <p className="text-xs text-muted truncate">{user?.role}</p>
           </div>
-          <Button variant="ghost" size="sm" onClick={logout} className="hidden sm:inline-flex">
+          <Button variant="ghost" size="sm" onClick={logout} className="min-h-touch md:min-h-0">
             Salir
           </Button>
         </div>

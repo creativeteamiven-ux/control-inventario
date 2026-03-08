@@ -13,8 +13,10 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/useAuth';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -37,11 +39,14 @@ function NavContent({
   collapsed: _collapsed,
   showLabels,
   onItemClick,
+  showLogout = false,
 }: {
   collapsed: boolean;
   showLabels: boolean;
   onItemClick?: () => void;
+  showLogout?: boolean;
 }) {
+  const { logout } = useAuth();
   return (
     <>
       <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
@@ -63,6 +68,23 @@ function NavContent({
           </NavLink>
         ))}
       </nav>
+      {showLogout && (
+        <div className="p-2 border-t border-border shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              onItemClick?.();
+              logout();
+            }}
+            className={cn(
+              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium w-full min-h-touch text-muted hover:bg-card-hover hover:text-destructive transition-colors'
+            )}
+          >
+            <LogOut className="h-5 w-5 shrink-0" />
+            <span>Salir</span>
+          </button>
+        </div>
+      )}
     </>
   );
 }
@@ -128,7 +150,7 @@ export default function Sidebar({ mobileOpen = false, onMobileClose }: SidebarPr
         )}
       >
         {headerContent({ showClose: true, showCollapse: false, labels: true })}
-        <NavContent collapsed={false} showLabels={true} onItemClick={closeMobile} />
+        <NavContent collapsed={false} showLabels={true} onItemClick={closeMobile} showLogout />
       </aside>
 
       {/* Tablet + Desktop: sidebar fijo (oculto en móvil) */}
