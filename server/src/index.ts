@@ -35,7 +35,7 @@ const nodeEnv = process.env.NODE_ENV || 'development';
 dotenv.config({ path: path.join(envDir, `.env.${nodeEnv}`) });
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = Number(process.env.PORT) || 3001;
 
 // CORS: permitir CLIENT_URL (puede ser varias separadas por coma) y previews de Vercel del frontend
 const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
