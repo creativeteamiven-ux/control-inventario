@@ -7,7 +7,7 @@ services:
     runtime: node
     name: control-inventario-api
     region: oregon
-    buildCommand: cd packages/shared && npm install && npm run build && cd ../server && npm install && npx prisma generate && npm run build
+    buildCommand: cd packages/shared && npm install && npm run build && cd ../../server && npm install && npx prisma generate && npm run build
     startCommand: cd server && node index.js
     healthCheckPath: /api/health
     envVars:
