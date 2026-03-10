@@ -19,9 +19,22 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+function getStoredUser(): User | null {
+  try {
+    const raw = localStorage.getItem('user');
+    if (!raw) return null;
+    const u = JSON.parse(raw) as User;
+    return u?.id && u?.email ? u : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(() =>
+    localStorage.getItem('accessToken') ? getStoredUser() : null
+  );
+  const [isLoading, setIsLoading] = useState(() => !(localStorage.getItem('accessToken') && getStoredUser()));
 
   const loadUser = useCallback(async () => {
     const token = localStorage.getItem('accessToken');

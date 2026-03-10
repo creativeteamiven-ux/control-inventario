@@ -22,6 +22,7 @@ import templatesRouter from './routes/templates.js';
 import importExportRouter from './routes/importExport.js';
 import dashboardRouter from './routes/dashboard.js';
 import usersRouter from './routes/users.js';
+import locationsRouter from './routes/locations.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -124,6 +125,7 @@ app.use('/api/templates', templatesRouter);
 app.use('/api/import', importExportRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/users', usersRouter);
+app.use('/api/locations', locationsRouter);
 
 // Archivos estáticos (uploads)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

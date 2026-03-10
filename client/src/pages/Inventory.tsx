@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Package, Grid3X3, List, Plus, Search, Download, Upload, Truck, FolderTree, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
@@ -167,8 +167,8 @@ export default function Inventory() {
     }
   };
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['devices', search, page, categoryId, statusFilter, needsReview],
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['devices', search, page, limit, categoryId, statusFilter, needsReview],
     queryFn: async () => {
       const { data } = await api.get('/api/devices', {
         params: {
@@ -182,6 +182,8 @@ export default function Inventory() {
       });
       return data;
     },
+    staleTime: 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 
   const devices = data?.devices ?? [];
@@ -247,7 +249,15 @@ export default function Inventory() {
         status: bulkStatusValue,
       });
       queryClient.invalidateQueries({ queryKey: ['devices'] });
-      toast.success(`${data.updated} equipo(s) actualizado(s)`);
+      if (bulkStatusValue === 'LOANED') {
+        queryClient.invalidateQueries({ queryKey: ['loans'] });
+        toast.success(`${data.updated} equipo(s) pasaron a préstamo. Ver en el módulo Préstamos.`);
+      } else if (bulkStatusValue === 'MAINTENANCE') {
+        queryClient.invalidateQueries({ queryKey: ['maintenance'] });
+        toast.success(`${data.updated} equipo(s) actualizado(s). Ver en Mantenimientos.`);
+      } else {
+        toast.success(`${data.updated} equipo(s) actualizado(s)`);
+      }
       setBulkStatusOpen(false);
       clearSelection();
     } catch (err: unknown) {
@@ -552,9 +562,21 @@ export default function Inventory() {
         </div>
       )}
 
-      {isLoading ? (
+      {isError ? (
+        <div className="bg-card rounded-xl border border-border border-destructive/30 p-8 text-center">
+          <p className="font-medium text-destructive mb-1">Error al cargar los equipos</p>
+          <p className="text-sm text-muted mb-4 max-w-md mx-auto">
+            {(error as { response?: { data?: { error?: string }; status?: number } })?.response?.data?.error
+              || (error as Error)?.message
+              || 'Revisa la conexión y que el backend esté en marcha.'}
+          </p>
+          <Button onClick={() => refetch()} variant="outline">
+            Reintentar
+          </Button>
+        </div>
+      ) : isLoading && !data ? (
         <div className="bg-card rounded-xl border border-border p-12 text-center text-muted">
-          Cargando inventario...
+          <p className="animate-pulse">Cargando equipos...</p>
         </div>
       ) : (
         <>

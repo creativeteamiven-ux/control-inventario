@@ -28,6 +28,7 @@ async function main() {
   await prisma.device.deleteMany();
   await prisma.tag.deleteMany();
   await prisma.category.deleteMany();
+  await prisma.location.deleteMany();
   await prisma.user.deleteMany();
 
   const hashedPassword = await bcrypt.hash('admin123', 10);
@@ -52,6 +53,19 @@ async function main() {
       phone: '+56987654321',
     },
   });
+
+  // Lugares/ubicaciones (el usuario puede editar nombre y orden desde el módulo Lugares)
+  const locationData = [
+    { code: 'MAIN_AUDITORIUM', name: 'Auditorio principal', sortOrder: 1 },
+    { code: 'RECORDING_STUDIO', name: 'Estudio de grabación', sortOrder: 2 },
+    { code: 'STORAGE_ROOM', name: 'Cuarto de almacenamiento', sortOrder: 3 },
+    { code: 'YOUTH_ROOM', name: 'Salón de jóvenes', sortOrder: 4 },
+    { code: 'CHAPEL', name: 'Capilla', sortOrder: 5 },
+    { code: 'ON_LOAN', name: 'En préstamo', sortOrder: 6 },
+  ];
+  for (const loc of locationData) {
+    await prisma.location.create({ data: loc });
+  }
 
   // Categorías - árbol jerárquico
   const catPA = await prisma.category.create({

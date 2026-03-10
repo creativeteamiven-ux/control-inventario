@@ -87,6 +87,16 @@ model Tag {
   devices Device[]
 }
 
+// Lugares/ubicaciones: el usuario puede agregar, editar nombre y orden. Device.location y Movement usan el code.
+model Location {
+  id        String   @id @default(cuid())
+  code      String   @unique  // MAIN_AUDITORIUM, STORAGE_ROOM, etc.
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Device {
   id             String          @id @default(cuid())
   name           String

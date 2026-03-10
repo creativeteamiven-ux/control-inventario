@@ -11,6 +11,7 @@ import TransferCart, { type CartDevice } from '@/components/TransferCart';
 import DevicePickerModal from '@/components/DevicePickerModal';
 import { getStoredCart, clearStoredCart, setStoredCart } from '@/lib/transferCart';
 import { DEVICE_LOCATION_LABELS } from '@/lib/statusLabels';
+import { Input } from '@/components/ui/input';
 
 type ValidationRow = { row: number; valid: boolean; errors: string[]; corrections: { field: string; from: string; to: string }[] };
 type ValidateResult = { headerErrors?: string; totalRows: number; validCount: number; invalidCount: number; rows: ValidationRow[] };
@@ -28,6 +29,13 @@ export default function Movements() {
   const [selectedCartIds, setSelectedCartIds] = useState<Set<string>>(new Set());
   const [validationResult, setValidationResult] = useState<ValidateResult | null>(null);
   const [fileToImport, setFileToImport] = useState<File | null>(null);
+  const [manualSubmitting, setManualSubmitting] = useState(false);
+  const [manualForm, setManualForm] = useState({
+    type: 'TRANSFER' as string,
+    reason: '',
+    fromLocation: '',
+    toLocation: '',
+  });
 
   useEffect(() => {
     const stored = getStoredCart();
@@ -111,6 +119,38 @@ export default function Movements() {
     }
   };
 
+  const handleRegisterFromCart = async () => {
+    const ids = selectedCartIds.size > 0 ? [...selectedCartIds] : cart.map((d) => d.id);
+    if (ids.length === 0) return;
+    if (!manualForm.reason.trim()) {
+      toast.error('Escribe la razón del movimiento');
+      return;
+    }
+    setManualSubmitting(true);
+    try {
+      const movements = ids.map((deviceId) => ({
+        deviceId,
+        type: manualForm.type,
+        reason: manualForm.reason.trim(),
+        fromLocation: manualForm.fromLocation || undefined,
+        toLocation: manualForm.toLocation || undefined,
+      }));
+      const { data } = await api.post<{ created: number; errors: { deviceId: string; message: string }[] }>('/api/movements', { movements });
+      queryClient.invalidateQueries({ queryKey: ['movements'] });
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
+      toast.success(`${data.created} movimiento(s) registrado(s)`);
+      if (data.errors?.length) toast.error(`${data.errors.length} no se pudieron registrar`);
+      setCart((prev) => prev.filter((d) => !ids.includes(d.id)));
+      setSelectedCartIds(new Set());
+      setManualForm((f) => ({ ...f, reason: '' }));
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error al registrar';
+      toast.error(msg);
+    } finally {
+      setManualSubmitting(false);
+    }
+  };
+
   const { data, isLoading } = useQuery({
     queryKey: ['movements'],
     queryFn: async () => {
@@ -118,6 +158,16 @@ export default function Movements() {
       return data;
     },
   });
+
+  const { data: locationsData } = useQuery({
+    queryKey: ['locations'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/locations');
+      return data;
+    },
+  });
+
+  const locations = (locationsData ?? []) as { code: string; name: string; sortOrder: number }[];
 
   const items = data?.items ?? [];
 
@@ -188,6 +238,68 @@ export default function Movements() {
           setSelectedCartIds(new Set());
         }}
       />
+      {cart.length > 0 && (
+        <div className="bg-card rounded-xl border border-border p-4 space-y-4">
+          <h3 className="font-medium text-foreground">Registrar traslado en página</h3>
+          <p className="text-sm text-muted">Completa los datos y registra el movimiento para los equipos del carrito sin usar plantilla Excel.</p>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <label className="block text-sm font-medium mb-1.5 text-foreground">Tipo *</label>
+              <select
+                value={manualForm.type}
+                onChange={(e) => setManualForm((f) => ({ ...f, type: e.target.value }))}
+                className="flex h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                {Object.entries(MOVEMENT_TYPE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-sm font-medium mb-1.5 text-foreground">Razón *</label>
+              <Input
+                value={manualForm.reason}
+                onChange={(e) => setManualForm((f) => ({ ...f, reason: e.target.value }))}
+                placeholder="Ej: Traslado a auditorio para evento"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5 text-muted">Desde (opcional)</label>
+              <select
+                value={manualForm.fromLocation}
+                onChange={(e) => setManualForm((f) => ({ ...f, fromLocation: e.target.value }))}
+                className="flex h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">Ubicación actual del equipo</option>
+                {locations.map((loc) => (
+                  <option key={loc.code} value={loc.code}>{loc.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1.5 text-muted">Hasta (opcional)</label>
+              <select
+                value={manualForm.toLocation}
+                onChange={(e) => setManualForm((f) => ({ ...f, toLocation: e.target.value }))}
+                className="flex h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">Sin cambio</option>
+                {locations.map((loc) => (
+                  <option key={loc.code} value={loc.code}>{loc.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={handleRegisterFromCart} disabled={manualSubmitting}>
+              {manualSubmitting ? 'Registrando...' : `Registrar para ${selectedCartIds.size > 0 ? selectedCartIds.size : cart.length} equipo(s)`}
+            </Button>
+            {selectedCartIds.size > 0 && (
+              <span className="text-sm text-muted">Solo los seleccionados en el carrito</span>
+            )}
+          </div>
+        </div>
+      )}
       <DevicePickerModal
         open={pickerOpen}
         onOpenChange={setPickerOpen}

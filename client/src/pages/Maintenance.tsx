@@ -170,14 +170,18 @@ export default function Maintenance() {
   const items = data ?? [];
   const { canViewCost } = usePermissions();
 
+  const statusClass = (status: string) =>
+    status === 'COMPLETED' ? 'bg-green-500/20 text-green-400' : status === 'IN_PROGRESS' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400';
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col gap-4">
         <h1 className="font-display text-2xl font-bold text-foreground">Mantenimientos</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={downloadTemplate}>
-            <Download className="h-4 w-4 mr-2" />
-            Plantilla
+        {/* Botones: en móvil en grid 2 columnas y full-width el principal */}
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-2">
+          <Button variant="outline" onClick={downloadTemplate} className="min-h-touch sm:min-h-0">
+            <Download className="h-4 w-4 mr-2 shrink-0" />
+            <span className="truncate">Plantilla</span>
           </Button>
           <div className="relative">
             <input
@@ -188,14 +192,14 @@ export default function Maintenance() {
               onChange={handleImport}
               disabled={importing}
             />
-            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}>
-              <Upload className="h-4 w-4 mr-2" />
-              {importing ? 'Cargando...' : 'Cargar'}
+            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing} className="w-full min-h-touch sm:min-h-0">
+              <Upload className="h-4 w-4 mr-2 shrink-0" />
+              <span className="truncate">{importing ? 'Cargando...' : 'Cargar'}</span>
             </Button>
           </div>
-          <Button variant="outline" onClick={downloadReportTemplate}>
-            <Download className="h-4 w-4 mr-2" />
-            Reporte datos
+          <Button variant="outline" onClick={downloadReportTemplate} className="min-h-touch sm:min-h-0">
+            <Download className="h-4 w-4 mr-2 shrink-0" />
+            <span className="truncate">Reporte datos</span>
           </Button>
           <div className="relative">
             <input
@@ -206,13 +210,13 @@ export default function Maintenance() {
               onChange={handleImportData}
               disabled={importingData}
             />
-            <Button variant="outline" onClick={() => fileDataInputRef.current?.click()} disabled={importingData}>
-              <Upload className="h-4 w-4 mr-2" />
-              {importingData ? 'Cargando datos...' : 'Cargar datos'}
+            <Button variant="outline" onClick={() => fileDataInputRef.current?.click()} disabled={importingData} className="w-full min-h-touch sm:min-h-0">
+              <Upload className="h-4 w-4 mr-2 shrink-0" />
+              <span className="truncate">{importingData ? 'Cargando...' : 'Cargar datos'}</span>
             </Button>
           </div>
-          <Button onClick={() => setAddOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
+          <Button onClick={() => setAddOpen(true)} className="col-span-2 min-h-touch sm:col-span-1 sm:min-h-0">
+            <Plus className="h-4 w-4 mr-2 shrink-0" />
             Agregar mantenimiento
           </Button>
         </div>
@@ -222,62 +226,116 @@ export default function Maintenance() {
           Cargando...
         </div>
       ) : (
-        <div className="bg-card rounded-xl border border-border overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left py-4 px-4 font-medium text-muted">Equipo</th>
-                <th className="text-left py-4 px-4 font-medium text-muted">Tipo</th>
-                <th className="text-left py-4 px-4 font-medium text-muted">Estado</th>
-                <th className="text-left py-4 px-4 font-medium text-muted">Fecha inicio</th>
-                {canViewCost() && <th className="text-left py-4 px-4 font-medium text-muted">Costo</th>}
-                <th className="w-12"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((m: MaintenanceItem) => (
-                <tr key={m.id} className="border-b border-border hover:bg-card-hover/50">
-                  <td className="py-3 px-4">
-                    <p className="font-medium">{m.device?.name}</p>
-                    <p className="text-sm text-muted">{m.device?.internalCode}</p>
-                  </td>
-                  <td className="py-3 px-4">{m.type}</td>
-                  <td className="py-3 px-4">
-                    <span
-                      className={`px-2 py-0.5 rounded text-xs ${
-                        m.status === 'COMPLETED' ? 'bg-green-500/20 text-green-400' : m.status === 'IN_PROGRESS' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'
-                      }`}
-                    >
+        <>
+          {/* Vista móvil: cards */}
+          <div className="md:hidden space-y-3">
+            {items.length === 0 ? (
+              <div className="bg-card rounded-xl border border-border p-12 text-center text-muted flex flex-col items-center gap-2">
+                <Wrench className="h-12 w-12" />
+                <p>No hay mantenimientos registrados</p>
+              </div>
+            ) : (
+              items.map((m: MaintenanceItem) => (
+                <div
+                  key={m.id}
+                  className="bg-card rounded-xl border border-border p-4 flex flex-col gap-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-foreground leading-tight">{m.device?.name}</p>
+                      <p className="text-sm text-muted font-mono">{m.device?.internalCode}</p>
+                    </div>
+                    <span className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-medium ${statusClass(m.status)}`}>
                       {maintenanceStatusLabel(m.status)}
                     </span>
-                  </td>
-                  <td className="py-3 px-4 text-sm">{format(new Date(m.startDate), 'dd MMM yyyy', { locale: es })}</td>
-                  {canViewCost() && <td className="py-3 px-4">{m.cost ? `$${m.cost}` : '—'}</td>}
-                  <td className="py-3 px-4">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted hover:text-primary"
-                      onClick={() => {
-                        setEditingItem(m);
-                        setEditOpen(true);
-                      }}
-                      title="Editar mantenimiento"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                  </td>
+                  </div>
+                  <dl className="grid gap-1.5 text-sm">
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted">Tipo</dt>
+                      <dd className="text-foreground font-medium capitalize">{m.type}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt className="text-muted">Fecha inicio</dt>
+                      <dd className="text-foreground">{format(new Date(m.startDate), 'dd MMM yyyy', { locale: es })}</dd>
+                    </div>
+                    {canViewCost() && (
+                      <div className="flex justify-between gap-2">
+                        <dt className="text-muted">Costo</dt>
+                        <dd className="text-foreground">{m.cost != null ? `$${m.cost}` : '—'}</dd>
+                      </div>
+                    )}
+                  </dl>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full min-h-touch sm:min-h-0"
+                    onClick={() => {
+                      setEditingItem(m);
+                      setEditOpen(true);
+                    }}
+                  >
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Editar
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Vista desktop: tabla */}
+          <div className="hidden md:block bg-card rounded-xl border border-border overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left py-4 px-4 font-medium text-muted">Equipo</th>
+                  <th className="text-left py-4 px-4 font-medium text-muted">Tipo</th>
+                  <th className="text-left py-4 px-4 font-medium text-muted">Estado</th>
+                  <th className="text-left py-4 px-4 font-medium text-muted">Fecha inicio</th>
+                  {canViewCost() && <th className="text-left py-4 px-4 font-medium text-muted">Costo</th>}
+                  <th className="w-12"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {items.length === 0 && (
-            <div className="p-12 text-center text-muted flex flex-col items-center gap-2">
-              <Wrench className="h-12 w-12" />
-              <p>No hay mantenimientos registrados</p>
-            </div>
-          )}
-        </div>
+              </thead>
+              <tbody>
+                {items.map((m: MaintenanceItem) => (
+                  <tr key={m.id} className="border-b border-border hover:bg-card-hover/50">
+                    <td className="py-3 px-4">
+                      <p className="font-medium">{m.device?.name}</p>
+                      <p className="text-sm text-muted">{m.device?.internalCode}</p>
+                    </td>
+                    <td className="py-3 px-4">{m.type}</td>
+                    <td className="py-3 px-4">
+                      <span className={`px-2 py-0.5 rounded text-xs ${statusClass(m.status)}`}>
+                        {maintenanceStatusLabel(m.status)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-sm">{format(new Date(m.startDate), 'dd MMM yyyy', { locale: es })}</td>
+                    {canViewCost() && <td className="py-3 px-4">{m.cost ? `$${m.cost}` : '—'}</td>}
+                    <td className="py-3 px-4">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted hover:text-primary"
+                        onClick={() => {
+                          setEditingItem(m);
+                          setEditOpen(true);
+                        }}
+                        title="Editar mantenimiento"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {items.length === 0 && (
+              <div className="p-12 text-center text-muted flex flex-col items-center gap-2">
+                <Wrench className="h-12 w-12" />
+                <p>No hay mantenimientos registrados</p>
+              </div>
+            )}
+          </div>
+        </>
       )}
       {validationResult && importKind && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => { if (!importing && !importingData) { setValidationResult(null); setFileToImport(null); setImportKind(null); } }}>

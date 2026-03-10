@@ -71,21 +71,33 @@ export default function DeviceDetail() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Link to="/inventory">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-4 w-4" />
+      {/* Header: en móvil en dos filas para que Editar siempre sea visible */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap sm:gap-4">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Link to="/inventory" className="shrink-0">
+            <Button variant="ghost" size="icon" className="h-10 w-10 min-h-touch min-w-touch sm:min-h-0 sm:min-w-0">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <div className="min-w-0 flex-1">
+            <h1 className="font-display text-xl sm:text-2xl font-bold text-foreground truncate">{d.name}</h1>
+            <span className="font-mono text-sm text-primary">{d.internalCode}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={cn('px-3 py-1.5 rounded-full text-sm font-medium shrink-0', STATUS_BADGE[d.status] ?? 'bg-muted')}>
+            {deviceStatusLabel(d.status)}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setEditOpen(true)}
+            className="min-h-touch sm:min-h-0 shrink-0"
+          >
+            <Pencil className="h-4 w-4 mr-2" />
+            Editar
           </Button>
-        </Link>
-        <h1 className="font-display text-2xl font-bold text-foreground">{d.name}</h1>
-        <span className={cn('px-3 py-1 rounded-full text-sm font-medium', STATUS_BADGE[d.status] ?? 'bg-muted')}>
-          {deviceStatusLabel(d.status)}
-        </span>
-        <span className="font-mono text-primary">{d.internalCode}</span>
-        <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-          <Pencil className="h-4 w-4 mr-2" />
-          Editar
-        </Button>
+        </div>
       </div>
 
       <EditDeviceModal
@@ -166,6 +178,17 @@ export default function DeviceDetail() {
                 <dd className="mt-1">{d.notes}</dd>
               </div>
             )}
+            {/* En móvil: botón Editar también aquí para acceso rápido al final del scroll */}
+            <div className="mt-6 pt-4 border-t border-border md:hidden">
+              <Button
+                variant="default"
+                className="w-full min-h-touch"
+                onClick={() => setEditOpen(true)}
+              >
+                <Pencil className="h-4 w-4 mr-2" />
+                Editar equipo
+              </Button>
+            </div>
           </div>
         </div>
         <div>

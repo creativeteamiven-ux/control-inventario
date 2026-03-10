@@ -9,6 +9,7 @@ import Categories from '@/pages/Categories';
 import Maintenance from '@/pages/Maintenance';
 import Loans from '@/pages/Loans';
 import Movements from '@/pages/Movements';
+import Locations from '@/pages/Locations';
 import Reports from '@/pages/Reports';
 import Users from '@/pages/Users';
 import Settings from '@/pages/Settings';
@@ -52,6 +53,7 @@ function AppRoutes() {
         <Route path="maintenance" element={<Maintenance />} />
         <Route path="loans" element={<Loans />} />
         <Route path="movements" element={<Movements />} />
+        <Route path="locations" element={<Locations />} />
         <Route path="reports" element={<Reports />} />
         <Route
           path="users"
