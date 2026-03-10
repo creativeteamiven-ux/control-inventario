@@ -12,9 +12,12 @@ const CORS_HEADERS = {
   'Access-Control-Max-Age': '86400',
 };
 
+const PRODUCTION_DOMAIN = 'https://thewarehouse.diosfuentedepoder.com';
+
 function isAllowedOrigin(origin) {
   if (!origin) return true;
   if (origin === 'http://localhost:5173') return true;
+  if (origin === PRODUCTION_DOMAIN) return true;
   return (
     origin.startsWith('https://') &&
     origin.includes('control-inventario-02') &&

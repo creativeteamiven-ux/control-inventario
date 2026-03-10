@@ -33,7 +33,7 @@ El backend (API Node.js + Express) se despliega en [Render](https://render.com) 
    | `DATABASE_URL`   | Connection string de PostgreSQL (Neon, Render Postgres, etc.). |
    | `JWT_SECRET`     | String largo y aleatorio para los access tokens. |
    | `REFRESH_SECRET` | Otro string distinto para los refresh tokens. |
-   | `CLIENT_URL`     | URL del frontend (ej. `https://control-inventario-02.vercel.app`) para CORS. |
+   | `CLIENT_URL`     | URL del frontend para CORS. Producción: `https://thewarehouse.diosfuentedepoder.com` (también se acepta la URL de Vercel si usas preview). |
    | `NODE_ENV`       | `production` (Render suele inyectarlo; opcional). |
 
 5. **Save** y deja que Render haga el primer deploy. La URL del API será algo como `https://control-inventario-api.onrender.com`.

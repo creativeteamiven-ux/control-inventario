@@ -11,10 +11,13 @@ export class AppError extends Error {
   }
 }
 
+const PRODUCTION_DOMAIN = 'https://thewarehouse.diosfuentedepoder.com';
+
 function setCorsIfAllowed(res: Response, origin: string | undefined) {
   if (!origin) return;
   const allowed =
     origin === 'http://localhost:5173' ||
+    origin === PRODUCTION_DOMAIN ||
     (origin.startsWith('https://') && origin.includes('control-inventario-02') && origin.endsWith('.vercel.app'));
   if (allowed) {
     res.setHeader('Access-Control-Allow-Origin', origin);

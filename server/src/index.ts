@@ -42,9 +42,11 @@ const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
+const PRODUCTION_DOMAIN = 'https://thewarehouse.diosfuentedepoder.com';
 const isAllowedOrigin = (origin: string | undefined): boolean => {
   if (!origin) return true;
   if (allowedOrigins.includes(origin)) return true;
+  if (origin === PRODUCTION_DOMAIN) return true;
   // Producción y previews de Vercel del frontend (cualquier subdominio que contenga el nombre del proyecto)
   if (
     origin.startsWith('https://') &&

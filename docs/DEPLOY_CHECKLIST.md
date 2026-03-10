@@ -44,7 +44,7 @@
   | `DATABASE_URL`  | Connection string de Neon (Pooled). |
   | `JWT_SECRET`    | String aleatorio largo (ej. `openssl rand -base64 32`). |
   | `REFRESH_SECRET`| Otro string aleatorio distinto. |
-  | `CLIENT_URL`    | URL del front en Vercel, ej. `https://tu-proyecto.vercel.app` (sin barra final). |
+  | `CLIENT_URL`    | URL del frontend para CORS. Producción: `https://thewarehouse.diosfuentedepoder.com` (sin barra final). |
   | `NODE_ENV`      | `production` (opcional; Render suele inyectarlo). |
 
 - **Build / Start:** según [docs/RENDER.md](RENDER.md): Root Directory vacío, Build: `cd packages/shared && npm install && npm run build && cd ../../server && npm install && npx prisma generate && npm run build`, Start: `cd server && node index.js`.
@@ -67,13 +67,14 @@
   |----------------|--------|
   | `VITE_API_URL` | URL del backend en Render, ej. `https://control-inventario-api.onrender.com` (sin barra final). |
 
-- Guarda y haz **Deploy**. La URL del sitio será algo como `https://tu-proyecto.vercel.app`.
+- **Dominio de producción:** en Vercel → Settings → Domains, añade `thewarehouse.diosfuentedepoder.com` y configura el DNS según las instrucciones de Vercel.
+- Guarda y haz **Deploy**. La URL del sitio en producción será `https://thewarehouse.diosfuentedepoder.com`.
 
 ---
 
 ## 4. Cerrar el círculo (CORS)
 
-- En **Render** → tu Web Service → **Environment**: revisa que `CLIENT_URL` sea exactamente la URL del frontend en Vercel (ej. `https://tu-proyecto.vercel.app`), sin barra final.
+- En **Render** → tu Web Service → **Environment**: revisa que `CLIENT_URL` sea exactamente la URL del frontend (producción: `https://thewarehouse.diosfuentedepoder.com`), sin barra final.
 - Si cambiaste `CLIENT_URL`, haz **Manual Deploy** en Render para que tome la variable.
 
 ---
