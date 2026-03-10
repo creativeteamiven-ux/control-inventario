@@ -10,11 +10,17 @@ const prisma = new PrismaClient();
 
 router.use(authenticate);
 
+type MovementPayload = { deviceId: string; type: string; reason: string; fromLocation?: string; toLocation?: string };
+
 /** Crear uno o más movimientos desde la página (sin importar Excel) */
 router.post('/', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), async (req: AuthRequest, res, next) => {
   try {
-    const body = req.body as { movements?: Array<{ deviceId: string; type: string; reason: string; fromLocation?: string; toLocation?: string }> };
-    const list = Array.isArray(body?.movements) ? body.movements : [body];
+    const body = req.body as { movements?: MovementPayload[] } | MovementPayload;
+    const list: MovementPayload[] = Array.isArray((body as { movements?: MovementPayload[] }).movements)
+      ? (body as { movements: MovementPayload[] }).movements
+      : body && typeof body === 'object' && 'deviceId' in body
+        ? [body as MovementPayload]
+        : [];
     if (list.length === 0) throw new AppError(400, 'Debe enviar al menos un movimiento');
     const userId = req.user!.userId;
     const results: { created: number; errors: { deviceId: string; message: string }[] } = { created: 0, errors: [] };
@@ -22,7 +28,7 @@ router.post('/', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), async (req: Auth
     for (const item of list) {
       const parsed = createMovementSchema.safeParse(item);
       if (!parsed.success) {
-        results.errors.push({ deviceId: item?.deviceId ?? '', message: parsed.error.errors[0]?.message ?? 'Datos inválidos' });
+        results.errors.push({ deviceId: item.deviceId ?? '', message: parsed.error.errors[0]?.message ?? 'Datos inválidos' });
         continue;
       }
       const device = await prisma.device.findFirst({ where: { id: parsed.data.deviceId, deletedAt: null } });
