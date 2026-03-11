@@ -256,7 +256,6 @@ export default function Login() {
               initial={{ opacity: 0, x: -16 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.4, type: 'spring', stiffness: 80 }}
-              whileFocusWithin={{ scale: 1.01 }}
             >
               <label className="block text-sm font-medium text-slate-200 mb-2">Email</label>
               <div className="relative">
@@ -282,7 +281,6 @@ export default function Login() {
               initial={{ opacity: 0, x: -16 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.5, type: 'spring', stiffness: 80 }}
-              whileFocusWithin={{ scale: 1.01 }}
             >
               <label className="block text-sm font-medium text-slate-200 mb-2">Contraseña</label>
               <div className="relative">
