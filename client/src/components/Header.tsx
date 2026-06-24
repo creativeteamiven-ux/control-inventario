@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { Search, Bell, User, Menu } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, Bell, User, Menu, ScanLine } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -13,6 +14,7 @@ interface HeaderProps {
 
 export default function Header({ onMenuClick, searchOpen = false, onSearchToggle }: HeaderProps) {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -76,6 +78,15 @@ export default function Header({ onMenuClick, searchOpen = false, onSearchToggle
       </div>
 
       <div className="flex items-center gap-1 md:gap-2 shrink-0">
+        <button
+          type="button"
+          onClick={() => navigate('/scan')}
+          className="p-2 rounded-md hover:bg-card text-muted hover:text-primary min-h-touch min-w-touch flex items-center justify-center md:min-h-0 md:min-w-0"
+          aria-label="Escanear equipo"
+          title="Escanear equipo"
+        >
+          <ScanLine className="h-5 w-5" />
+        </button>
         <button
           type="button"
           className="relative p-2 rounded-md hover:bg-card text-muted hover:text-foreground min-h-touch min-w-touch flex items-center justify-center md:min-h-0 md:min-w-0"

@@ -17,6 +17,9 @@ dist/
 build/
 *.tsbuildinfo
 .vercel/
+# Config de Vite compilada por error (solo usamos vite.config.ts)
+client/vite.config.js
+client/vite.config.d.ts
 # Server compilado en raíz (outDir .)
 server/index.js
 server/index.d.ts

@@ -1,10 +1,11 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import Login from '@/pages/Login';
 import Layout from '@/components/Layout';
 import Dashboard from '@/pages/Dashboard';
 import Inventory from '@/pages/Inventory';
 import DeviceDetail from '@/pages/DeviceDetail';
+import Scanner from '@/pages/Scanner';
 import Categories from '@/pages/Categories';
 import Maintenance from '@/pages/Maintenance';
 import Loans from '@/pages/Loans';
@@ -33,6 +34,12 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Los QR generados apuntan a /device/:id; redirigimos a la ficha del inventario.
+function DeviceRedirect() {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={`/inventory/${id}`} replace />;
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -49,6 +56,8 @@ function AppRoutes() {
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="inventory" element={<Inventory />} />
         <Route path="inventory/:id" element={<DeviceDetail />} />
+        <Route path="scan" element={<Scanner />} />
+        <Route path="device/:id" element={<DeviceRedirect />} />
         <Route path="categories" element={<Categories />} />
         <Route path="maintenance" element={<Maintenance />} />
         <Route path="loans" element={<Loans />} />

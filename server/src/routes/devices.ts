@@ -86,6 +86,37 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// Búsqueda rápida para el escáner: acepta número de serie, código interno, id o una URL de QR.
+router.get('/lookup', async (req, res, next) => {
+  try {
+    let raw = String(req.query.code ?? '').trim();
+    if (!raw) throw new AppError(400, 'Indica un código para buscar');
+    // Si se escaneó una URL de QR (ej: .../device/<id> o .../inventory/<id>), extraer el id/código.
+    const urlMatch = raw.match(/\/(?:device|inventory)\/([^/?#]+)/i);
+    if (urlMatch) raw = decodeURIComponent(urlMatch[1]);
+
+    const device = await prisma.device.findFirst({
+      where: {
+        deletedAt: null,
+        OR: [
+          { id: raw },
+          { internalCode: { equals: raw, mode: 'insensitive' } },
+          { serialNumber: { equals: raw, mode: 'insensitive' } },
+        ],
+      },
+      include: {
+        category: { select: { id: true, name: true, color: true } },
+        images: { orderBy: { order: 'asc' }, take: 1 },
+      },
+    });
+    if (!device) throw new AppError(404, 'No se encontró ningún equipo con ese código');
+    const perms = (req as AuthRequest).user?.permissions ?? [];
+    res.json(stripCostFromResponse(device, perms));
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get('/:id', async (req, res, next) => {
   try {
     const device = await prisma.device.findFirst({

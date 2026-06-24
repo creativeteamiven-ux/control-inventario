@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   Package,
+  ScanLine,
   FolderTree,
   MapPin,
   Wrench,
@@ -22,6 +23,7 @@ import { useAuth } from '@/hooks/useAuth';
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/inventory', icon: Package, label: 'Inventario' },
+  { to: '/scan', icon: ScanLine, label: 'Escanear' },
   { to: '/categories', icon: FolderTree, label: 'Categorías' },
   { to: '/locations', icon: MapPin, label: 'Lugares' },
   { to: '/maintenance', icon: Wrench, label: 'Mantenimientos' },
