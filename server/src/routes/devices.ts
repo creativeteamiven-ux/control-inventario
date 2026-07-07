@@ -58,11 +58,11 @@ router.get('/', async (req, res, next) => {
     if (filters.search) {
       const searchClause = {
         OR: [
-          { name: { contains: filters.search, mode: 'insensitive' as const } },
-          { brand: { contains: filters.search, mode: 'insensitive' as const } },
-          { model: { contains: filters.search, mode: 'insensitive' as const } },
-          { internalCode: { contains: filters.search, mode: 'insensitive' as const } },
-          { serialNumber: { contains: filters.search, mode: 'insensitive' as const } },
+          { name: { contains: filters.search } },
+          { brand: { contains: filters.search } },
+          { model: { contains: filters.search } },
+          { internalCode: { contains: filters.search } },
+          { serialNumber: { contains: filters.search } },
         ],
       };
       where.AND = [...((where.AND as object[]) || []), searchClause];
@@ -101,9 +101,9 @@ router.get('/lookup', async (req, res, next) => {
       where: {
         deletedAt: null,
         OR: [
-          { id: raw },
-          { internalCode: { equals: raw, mode: 'insensitive' } },
-          { serialNumber: { equals: raw, mode: 'insensitive' } },
+        { id: raw },
+        { internalCode: { equals: raw } },
+        { serialNumber: { equals: raw } },
         ],
       },
       include: {

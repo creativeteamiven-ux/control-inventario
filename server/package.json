@@ -14,7 +14,9 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:baseline": "prisma migrate resolve --applied 0_init",
     "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "db:source:generate": "prisma generate --schema=prisma/source.prisma",
+    "migrate:data": "tsx scripts/migrate-to-tidb.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -48,3 +48,5 @@ venv/
 
 # Prisma
 server/node_modules/
+# Cliente Prisma de ORIGEN (solo para migración de datos, se regenera)
+server/prisma/generated/

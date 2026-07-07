@@ -1,0 +1,207 @@
+generator source {
+  provider = "prisma-client-js"
+  output   = "./generated/source"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("SOURCE_DATABASE_URL")
+}
+
+model User {
+  id            String        @id @default(cuid())
+  name          String
+  email         String        @unique
+  password      String
+  role          UserRole
+  avatar        String?
+  phone         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  permissions   Json?
+  loanApprovals LoanRecord[]  @relation("ApprovedBy")
+  maintenances  Maintenance[]
+  movements     Movement[]
+}
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String
+  slug      String     @unique
+  icon      String
+  color     String
+  parentId  String?
+  createdAt DateTime   @default(now())
+  parent    Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children  Category[] @relation("CategoryTree")
+  devices   Device[]
+}
+
+model Tag {
+  id      String   @id @default(cuid())
+  name    String   @unique
+  devices Device[] @relation("DeviceToTag")
+}
+
+model Location {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Device {
+  id             String         @id @default(cuid())
+  name           String
+  brand          String
+  model          String
+  serialNumber   String?        @unique
+  internalCode   String         @unique
+  categoryId     String
+  status         DeviceStatus   @default(ACTIVE)
+  location       DeviceLocation @default(STORAGE_ROOM)
+  purchaseDate   DateTime?
+  purchasePrice  Decimal?       @db.Decimal(10, 2)
+  warrantyExpiry DateTime?
+  supplier       String?
+  notes          String?
+  condition      Int            @default(100)
+  qrCode         String?
+  isQrGenerated  Boolean        @default(false)
+  createdBy      String
+  lastCheckedAt  DateTime?
+  deletedAt      DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  observation    String?        @db.VarChar(500)
+  category       Category       @relation(fields: [categoryId], references: [id])
+  images         DeviceImage[]
+  documents      Document[]
+  loanRecords    LoanRecord[]
+  maintenances   Maintenance[]
+  movements      Movement[]
+  tags           Tag[]          @relation("DeviceToTag")
+}
+
+model DeviceImage {
+  id        String   @id @default(cuid())
+  deviceId  String
+  url       String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  device    Device   @relation(fields: [deviceId], references: [id])
+}
+
+model Document {
+  id        String   @id @default(cuid())
+  deviceId  String
+  name      String
+  type      String
+  url       String
+  createdAt DateTime @default(now())
+  device    Device   @relation(fields: [deviceId], references: [id])
+}
+
+model Movement {
+  id           String          @id @default(cuid())
+  deviceId     String
+  type         MovementType
+  fromLocation DeviceLocation?
+  toLocation   DeviceLocation?
+  reason       String
+  userId       String
+  createdAt    DateTime        @default(now())
+  device       Device          @relation(fields: [deviceId], references: [id])
+  user         User            @relation(fields: [userId], references: [id])
+}
+
+model Maintenance {
+  id          String    @id @default(cuid())
+  deviceId    String
+  type        String
+  description String
+  cost        Decimal?  @db.Decimal(10, 2)
+  technician  String?
+  startDate   DateTime
+  endDate     DateTime?
+  status      String
+  notes       String?
+  userId      String
+  createdAt   DateTime  @default(now())
+  device      Device    @relation(fields: [deviceId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+}
+
+model LoanRecord {
+  id             String    @id @default(cuid())
+  deviceId       String
+  borrowerName   String
+  borrowerEmail  String?
+  borrowerPhone  String?
+  purpose        String
+  loanDate       DateTime
+  expectedReturn DateTime
+  returnDate     DateTime?
+  status         String
+  approvedBy     String
+  notes          String?
+  createdAt      DateTime  @default(now())
+  approvedByUser User      @relation("ApprovedBy", fields: [approvedBy], references: [id])
+  device         Device    @relation(fields: [deviceId], references: [id])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  entity    String
+  entityId  String
+  action    String
+  changes   Json?
+  userId    String?
+  userEmail String?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+}
+
+enum DeviceCategory {
+  AUDIO_PA
+  RECORDING_STUDIO
+  INSTRUMENTS
+  CABLES_ACCESSORIES
+  LIGHTING
+  MULTIMEDIA
+}
+
+enum DeviceStatus {
+  ACTIVE
+  MAINTENANCE
+  DAMAGED
+  LOST
+  RETIRED
+  LOANED
+}
+
+enum DeviceLocation {
+  MAIN_AUDITORIUM
+  RECORDING_STUDIO
+  STORAGE_ROOM
+  YOUTH_ROOM
+  CHAPEL
+  ON_LOAN
+}
+
+enum MovementType {
+  CHECK_IN
+  CHECK_OUT
+  TRANSFER
+  STATUS_CHANGE
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  TECHNICIAN
+  VIEWER
+}

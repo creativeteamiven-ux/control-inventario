@@ -458,7 +458,7 @@ router.post('/movements', requirePermission('movements.create'), upload.single('
       let moveUserId = defaultUserId;
       if (respIdx >= 0 && row[respIdx]) {
         const respEmail = String(row[respIdx]).trim();
-        const respUser = await prisma.user.findFirst({ where: { email: { equals: respEmail, mode: 'insensitive' } } });
+        const respUser = await prisma.user.findFirst({ where: { email: { equals: respEmail } } });
         if (respUser) moveUserId = respUser.id;
       }
 

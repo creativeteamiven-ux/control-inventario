@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -69,7 +69,7 @@ model User {
   password     String
   role         UserRole
   permissions  Json?     // Array de claves de permiso. Si null/empty se usan los del rol.
-  avatar       String?
+  avatar       String?   @db.Text
   phone        String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -126,7 +126,7 @@ model Device {
   notes          String?         @db.Text
   observation    String?         @db.VarChar(500)
   condition      Int             @default(100)
-  qrCode         String?
+  qrCode         String?         @db.Text
   isQrGenerated  Boolean         @default(false)
   createdBy      String
   lastCheckedAt  DateTime?
@@ -146,7 +146,7 @@ model DeviceImage {
   id        String   @id @default(cuid())
   deviceId  String
   device    Device   @relation(fields: [deviceId], references: [id])
-  url       String
+  url       String   @db.VarChar(1000)
   order     Int      @default(0)
   createdAt DateTime @default(now())
 }
@@ -157,7 +157,7 @@ model Document {
   device    Device   @relation(fields: [deviceId], references: [id])
   name      String
   type      String   // factura, manual, garantia
-  url       String
+  url       String   @db.VarChar(1000)
   createdAt DateTime @default(now())
 }
 
@@ -222,7 +222,7 @@ model Expense {
   paymentMethod String?
   deviceId      String?
   device        Device?         @relation(fields: [deviceId], references: [id])
-  receiptUrl    String?         // Comprobante adjunto (imagen o PDF)
+  receiptUrl    String?         @db.VarChar(1000) // Comprobante adjunto (imagen o PDF)
   userId        String?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
