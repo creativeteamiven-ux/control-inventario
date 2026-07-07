@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ImagePlus, X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -12,6 +13,8 @@ import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { usePermissions } from '@/hooks/usePermissions';
+
+const MAX_IMAGES = 5;
 
 /** Parsea precio en formato colombiano: 5.000 = 5000, 1.500.000 = 1500000 */
 function parsePriceCOP(value: string): number | undefined {
@@ -49,6 +52,7 @@ export default function AddDeviceModal({ open, onOpenChange }: AddDeviceModalPro
   const queryClient = useQueryClient();
   const { canViewCost } = usePermissions();
   const [submitting, setSubmitting] = useState(false);
+  const [images, setImages] = useState<File[]>([]);
   const [form, setForm] = useState({
     name: '',
     brand: '',
@@ -88,6 +92,32 @@ export default function AddDeviceModal({ open, onOpenChange }: AddDeviceModalPro
   }
   const categories = Array.isArray(categoriesData) ? flattenCats(categoriesData) : [];
 
+  // Previsualizaciones locales de las imágenes seleccionadas (se liberan al cambiar/desmontar).
+  const previews = useMemo(() => images.map((f) => URL.createObjectURL(f)), [images]);
+  useEffect(() => () => previews.forEach((url) => URL.revokeObjectURL(url)), [previews]);
+
+  const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!picked.length) return;
+    const valid = picked.filter((f) => /image\/(jpe?g|png|webp)/.test(f.type) && f.size <= 5 * 1024 * 1024);
+    if (valid.length < picked.length) {
+      toast.error('Solo imágenes JPG/PNG/WebP de máximo 5 MB');
+    }
+    setImages((prev) => {
+      const combined = [...prev, ...valid];
+      if (combined.length > MAX_IMAGES) toast.error(`Máximo ${MAX_IMAGES} imágenes`);
+      return combined.slice(0, MAX_IMAGES);
+    });
+  };
+
+  const removeImage = (idx: number) => setImages((prev) => prev.filter((_, i) => i !== idx));
+
+  const resetForm = () => {
+    setForm({ name: '', brand: '', model: '', serialNumber: '', categoryId: '', status: 'ACTIVE', location: 'STORAGE_ROOM', purchasePrice: '', supplier: '', notes: '', observation: '', condition: '100' });
+    setImages([]);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim() || !form.brand.trim() || !form.model.trim() || !form.categoryId) {
@@ -96,7 +126,7 @@ export default function AddDeviceModal({ open, onOpenChange }: AddDeviceModalPro
     }
     setSubmitting(true);
     try {
-      await api.post('/api/devices', {
+      const { data: created } = await api.post('/api/devices', {
         name: form.name.trim(),
         brand: form.brand.trim(),
         model: form.model.trim(),
@@ -110,9 +140,23 @@ export default function AddDeviceModal({ open, onOpenChange }: AddDeviceModalPro
         observation: form.observation.trim() || undefined,
         condition: Math.min(100, Math.max(0, parseInt(form.condition, 10) || 100)),
       });
+
+      // Subir imágenes (si hay) y vincularlas al equipo recién creado.
+      if (images.length > 0 && created?.id) {
+        try {
+          const fd = new FormData();
+          images.forEach((f) => fd.append('images', f));
+          fd.append('deviceId', created.id);
+          await api.post('/api/upload/images', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+          queryClient.invalidateQueries({ queryKey: ['device', created.id] });
+        } catch {
+          toast.error('El equipo se creó, pero falló la subida de imágenes. Puedes agregarlas luego editando el equipo.');
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ['devices'] });
       toast.success('Equipo agregado correctamente');
-      setForm({ name: '', brand: '', model: '', serialNumber: '', categoryId: '', status: 'ACTIVE', location: 'STORAGE_ROOM', purchasePrice: '', supplier: '', notes: '', observation: '', condition: '100' });
+      resetForm();
       onOpenChange(false);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error al agregar equipo';
@@ -271,12 +315,44 @@ export default function AddDeviceModal({ open, onOpenChange }: AddDeviceModalPro
               className="flex w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary resize-none"
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Imágenes del equipo</label>
+            <div className="flex flex-wrap gap-3">
+              {previews.map((src, i) => (
+                <div key={src} className="relative h-20 w-20 rounded-md overflow-hidden border border-border group">
+                  <img src={src} alt={`Imagen ${i + 1}`} className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(i)}
+                    className="absolute top-0.5 right-0.5 rounded-full bg-black/60 p-0.5 text-white opacity-90 hover:bg-black/80"
+                    aria-label="Quitar imagen"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              {images.length < MAX_IMAGES && (
+                <label className="h-20 w-20 flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border cursor-pointer text-muted hover:text-foreground hover:border-primary transition-colors">
+                  <ImagePlus className="h-5 w-5" />
+                  <span className="text-[10px]">Agregar</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    className="hidden"
+                    onChange={handleFiles}
+                  />
+                </label>
+              )}
+            </div>
+            <p className="text-xs text-muted mt-1">Hasta {MAX_IMAGES} imágenes (JPG, PNG o WebP, máx. 5 MB c/u). La primera será la principal.</p>
+          </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
             <Button type="submit" disabled={submitting}>
-              {submitting ? 'Guardando...' : 'Agregar equipo'}
+              {submitting ? (images.length > 0 ? 'Guardando y subiendo...' : 'Guardando...') : 'Agregar equipo'}
             </Button>
           </DialogFooter>
         </form>
