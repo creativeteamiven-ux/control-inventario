@@ -29,6 +29,30 @@
   padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
 }
 
+/* Scrollbar delgado y elegante (opcional por clase) */
+.thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+.thin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #334155;
+  border-radius: 9999px;
+}
+.thin-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: #475569;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(245, 158, 11, 0.7);
+}
+
 /* Respetar preferencia de menos animación */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

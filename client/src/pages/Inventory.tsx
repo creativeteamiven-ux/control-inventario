@@ -302,7 +302,7 @@ export default function Inventory() {
               <FolderTree className="h-3.5 w-3.5" />
               Categorías
             </h3>
-            <nav className="space-y-0.5 max-h-[38vh] overflow-y-auto pr-1 -mr-1">
+            <nav className="thin-scrollbar space-y-0.5 max-h-[42vh] overflow-y-auto pr-2 -mr-2">
               <button
                 onClick={() => { setCategoryId(null); setNeedsReview(false); setPage(1); }}
                 className={cn(
