@@ -277,9 +277,9 @@ export default function Inventory() {
       className="flex gap-6"
     >
       <aside className="w-60 shrink-0 hidden lg:block">
-        <div className="sticky top-24 rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+        <div className="sticky top-24 flex flex-col max-h-[calc(100vh-7rem)] rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
           {/* Encabezado del panel */}
-          <div className="px-4 py-3 border-b border-border bg-gradient-to-r from-primary/10 to-transparent">
+          <div className="shrink-0 px-4 py-3 border-b border-border bg-gradient-to-r from-primary/10 to-transparent">
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <SlidersHorizontal className="h-4 w-4 text-primary" />
@@ -297,12 +297,12 @@ export default function Inventory() {
           </div>
 
           {/* Sección: Categorías */}
-          <div className="p-3">
-            <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted mb-2 px-1">
+          <div className="flex-1 min-h-0 flex flex-col p-3">
+            <h3 className="shrink-0 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted mb-2 px-1">
               <FolderTree className="h-3.5 w-3.5" />
               Categorías
             </h3>
-            <nav className="thin-scrollbar space-y-0.5 max-h-[42vh] overflow-y-auto pr-2 -mr-2">
+            <nav className="thin-scrollbar flex-1 min-h-0 space-y-0.5 overflow-y-auto pr-2 -mr-2">
               <button
                 onClick={() => { setCategoryId(null); setNeedsReview(false); setPage(1); }}
                 className={cn(
@@ -348,7 +348,7 @@ export default function Inventory() {
           </div>
 
           {/* Sección: Lugares */}
-          <div className="p-3 border-t border-border">
+          <div className="shrink-0 p-3 border-t border-border">
             <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted mb-2 px-1">
               <MapPin className="h-3.5 w-3.5" />
               Lugares

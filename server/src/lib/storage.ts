@@ -70,3 +70,30 @@ export async function uploadBuffer(
   fs.writeFileSync(path.join(dir, filename), buffer);
   return `/uploads/${folder}/${filename}`;
 }
+
+/**
+ * Elimina un archivo por su URL pública (best-effort).
+ * - Cloudinary: extrae el public_id y lo borra.
+ * - Local: borra el archivo del disco.
+ * Nunca lanza: los errores se ignoran para no bloquear la operación principal.
+ */
+export async function deleteByUrl(url: string): Promise<void> {
+  if (!url) return;
+  try {
+    if (/res\.cloudinary\.com/.test(url) || (isCloudStorage() && !url.startsWith('/uploads/'))) {
+      // Extraer public_id: todo lo que va después de /upload/ (quitando versión y extensión)
+      const match = url.match(/\/upload\/(?:v\d+\/)?(.+)$/);
+      if (match) {
+        const publicId = match[1].replace(/\.[^/.]+$/, '');
+        await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+      }
+      return;
+    }
+    if (url.startsWith('/uploads/')) {
+      const filePath = path.join(process.cwd(), url.replace(/^\//, ''));
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+  } catch {
+    // Ignorar errores de borrado de almacenamiento
+  }
+}

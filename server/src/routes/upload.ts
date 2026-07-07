@@ -7,7 +7,7 @@ import sharp from 'sharp';
 import { PrismaClient } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
-import { uploadBuffer } from '../lib/storage.js';
+import { uploadBuffer, deleteByUrl } from '../lib/storage.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -86,6 +86,18 @@ router.post('/images', requirePermission('inventory.edit'), uploadImages.array('
       }
     }
     res.json({ images: results });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/images/:id', requirePermission('inventory.edit'), async (req: AuthRequest, res, next) => {
+  try {
+    const image = await prisma.deviceImage.findUnique({ where: { id: req.params.id } });
+    if (!image) throw new AppError(404, 'Imagen no encontrada');
+    await prisma.deviceImage.delete({ where: { id: image.id } });
+    await deleteByUrl(image.url);
+    res.json({ ok: true });
   } catch (e) {
     next(e);
   }

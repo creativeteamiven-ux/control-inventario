@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ImagePlus, X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -12,6 +13,8 @@ import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { usePermissions } from '@/hooks/usePermissions';
+
+const MAX_IMAGES = 5;
 
 /** Parsea precio en formato colombiano: 5.000 = 5000, 1.500.000 = 1500000 */
 function parsePriceCOP(value: string): number | undefined {
@@ -66,6 +69,7 @@ export default function EditDeviceModal({ open, onOpenChange, device }: EditDevi
   const queryClient = useQueryClient();
   const { canViewCost } = usePermissions();
   const [submitting, setSubmitting] = useState(false);
+  const [images, setImages] = useState<File[]>([]);
   const [form, setForm] = useState({
     name: '',
     brand: '',
@@ -97,8 +101,28 @@ export default function EditDeviceModal({ open, onOpenChange, device }: EditDevi
         observation: device.observation || '',
         condition: String(device.condition ?? 100),
       });
+      setImages([]);
     }
   }, [device]);
+
+  // Previsualizaciones locales de las imágenes nuevas seleccionadas.
+  const previews = useMemo(() => images.map((f) => URL.createObjectURL(f)), [images]);
+  useEffect(() => () => previews.forEach((url) => URL.revokeObjectURL(url)), [previews]);
+
+  const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!picked.length) return;
+    const valid = picked.filter((f) => /image\/(jpe?g|png|webp)/.test(f.type) && f.size <= 5 * 1024 * 1024);
+    if (valid.length < picked.length) toast.error('Solo imágenes JPG/PNG/WebP de máximo 5 MB');
+    setImages((prev) => {
+      const combined = [...prev, ...valid];
+      if (combined.length > MAX_IMAGES) toast.error(`Máximo ${MAX_IMAGES} imágenes`);
+      return combined.slice(0, MAX_IMAGES);
+    });
+  };
+
+  const removeImage = (idx: number) => setImages((prev) => prev.filter((_, i) => i !== idx));
 
   const { data: categoriesData, isLoading: categoriesLoading } = useQuery({
     queryKey: ['categories'],
@@ -146,9 +170,23 @@ export default function EditDeviceModal({ open, onOpenChange, device }: EditDevi
         observation: form.observation.trim() || undefined,
         condition: Math.min(100, Math.max(0, parseInt(form.condition, 10) || 100)),
       });
+
+      // Subir imágenes nuevas (si hay) y vincularlas al equipo.
+      if (images.length > 0) {
+        try {
+          const fd = new FormData();
+          images.forEach((f) => fd.append('images', f));
+          fd.append('deviceId', device.id);
+          await api.post('/api/upload/images', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        } catch {
+          toast.error('Se guardaron los cambios, pero falló la subida de imágenes.');
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ['devices'] });
       queryClient.invalidateQueries({ queryKey: ['device', device.id] });
       toast.success('Equipo actualizado correctamente');
+      setImages([]);
       onOpenChange(false);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error al actualizar';
@@ -306,12 +344,44 @@ export default function EditDeviceModal({ open, onOpenChange, device }: EditDevi
               className="flex w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary resize-none"
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Agregar imágenes</label>
+            <div className="flex flex-wrap gap-3">
+              {previews.map((src, i) => (
+                <div key={src} className="relative h-20 w-20 rounded-md overflow-hidden border border-border">
+                  <img src={src} alt={`Nueva ${i + 1}`} className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(i)}
+                    className="absolute top-0.5 right-0.5 rounded-full bg-black/60 p-0.5 text-white opacity-90 hover:bg-black/80"
+                    aria-label="Quitar imagen"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              {images.length < MAX_IMAGES && (
+                <label className="h-20 w-20 flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border cursor-pointer text-muted hover:text-foreground hover:border-primary transition-colors">
+                  <ImagePlus className="h-5 w-5" />
+                  <span className="text-[10px]">Agregar</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    className="hidden"
+                    onChange={handleFiles}
+                  />
+                </label>
+              )}
+            </div>
+            <p className="text-xs text-muted mt-1">Se añadirán a las imágenes existentes. Para eliminar las actuales, usa la galería en la ficha del equipo.</p>
+          </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
             <Button type="submit" disabled={submitting}>
-              {submitting ? 'Guardando...' : 'Guardar cambios'}
+              {submitting ? (images.length > 0 ? 'Guardando y subiendo...' : 'Guardando...') : 'Guardar cambios'}
             </Button>
           </DialogFooter>
         </form>

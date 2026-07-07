@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Package, Pencil, QrCode, TrendingDown, Trash2 } from 'lucide-react';
+import { ArrowLeft, Package, Pencil, QrCode, TrendingDown, Trash2, ImagePlus, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import EditDeviceModal from '@/components/EditDeviceModal';
 import { api } from '@/lib/api';
@@ -42,6 +42,10 @@ export default function DeviceDetail() {
   const { canViewCost, hasPermission } = usePermissions();
   const [editOpen, setEditOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [activeImage, setActiveImage] = useState(0);
+  const [uploadingImg, setUploadingImg] = useState(false);
+  const [deletingImgId, setDeletingImgId] = useState<string | null>(null);
+  const imgInputRef = useRef<HTMLInputElement>(null);
   const { data, isLoading } = useQuery({
     queryKey: ['device', id],
     queryFn: async () => {
@@ -95,10 +99,58 @@ export default function DeviceDetail() {
     supplier?: string;
     notes?: string;
     category: { name: string };
-    images: { url: string }[];
+    images: { id: string; url: string }[];
   };
 
   const canDelete = hasPermission('inventory.delete');
+  const canEdit = hasPermission('inventory.edit');
+  const images = d.images ?? [];
+  const mainIndex = Math.min(activeImage, Math.max(0, images.length - 1));
+
+  const handleAddImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!picked.length) return;
+    const valid = picked.filter((f) => /image\/(jpe?g|png|webp)/.test(f.type) && f.size <= 5 * 1024 * 1024);
+    if (valid.length < picked.length) toast.error('Solo imágenes JPG/PNG/WebP de máximo 5 MB');
+    if (!valid.length) return;
+    const room = Math.max(0, 5 - images.length);
+    if (room <= 0) { toast.error('Máximo 5 imágenes por equipo'); return; }
+    const toUpload = valid.slice(0, room);
+    setUploadingImg(true);
+    try {
+      const fd = new FormData();
+      toUpload.forEach((f) => fd.append('images', f));
+      fd.append('deviceId', d.id);
+      fd.append('order', String(images.length));
+      await api.post('/api/upload/images', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      await queryClient.invalidateQueries({ queryKey: ['device', d.id] });
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
+      toast.success('Imágenes agregadas');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error al subir imágenes';
+      toast.error(msg);
+    } finally {
+      setUploadingImg(false);
+    }
+  };
+
+  const handleDeleteImage = async (imageId: string) => {
+    if (!confirm('¿Eliminar esta imagen?')) return;
+    setDeletingImgId(imageId);
+    try {
+      await api.delete(`/api/upload/images/${imageId}`);
+      await queryClient.invalidateQueries({ queryKey: ['device', d.id] });
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
+      setActiveImage(0);
+      toast.success('Imagen eliminada');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error al eliminar la imagen';
+      toast.error(msg);
+    } finally {
+      setDeletingImgId(null);
+    }
+  };
 
   const handleDelete = async () => {
     if (!confirm(`¿Eliminar el equipo "${d.name}" (${d.internalCode}) del inventario?\n\nSe quitará del listado. Esta acción no se puede deshacer desde la aplicación.`)) return;
@@ -167,13 +219,76 @@ export default function DeviceDetail() {
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-card rounded-xl border border-border overflow-hidden">
-            <div className="h-64 bg-card-hover flex items-center justify-center">
-              {d.images?.[0]?.url ? (
-                <img src={d.images[0].url} alt={d.name} className="h-full w-full object-cover" />
+            {/* Imagen principal */}
+            <div className="relative h-64 bg-card-hover flex items-center justify-center group">
+              {images.length > 0 ? (
+                <>
+                  <img src={images[mainIndex]?.url} alt={d.name} className="h-full w-full object-contain" />
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteImage(images[mainIndex].id)}
+                      disabled={deletingImgId === images[mainIndex]?.id}
+                      className="absolute top-2 right-2 rounded-full bg-black/60 p-1.5 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 disabled:opacity-60"
+                      title="Eliminar esta imagen"
+                      aria-label="Eliminar imagen"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </>
               ) : (
                 <Package className="h-24 w-24 text-muted" />
               )}
             </div>
+            {/* Miniaturas + agregar */}
+            {(images.length > 0 || canEdit) && (
+              <div className="flex flex-wrap items-center gap-2 p-3 border-t border-border">
+                {images.map((img, i) => (
+                  <div
+                    key={img.id}
+                    className={cn(
+                      'relative h-16 w-16 rounded-lg overflow-hidden border-2 cursor-pointer group/thumb transition-colors',
+                      i === mainIndex ? 'border-primary' : 'border-border hover:border-primary/50'
+                    )}
+                    onClick={() => setActiveImage(i)}
+                  >
+                    <img src={img.url} alt={`${d.name} ${i + 1}`} className="h-full w-full object-cover" />
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteImage(img.id); }}
+                        disabled={deletingImgId === img.id}
+                        className="absolute top-0.5 right-0.5 rounded-full bg-black/60 p-0.5 text-white opacity-0 group-hover/thumb:opacity-100 transition-opacity hover:bg-red-600 disabled:opacity-60"
+                        aria-label="Eliminar imagen"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {canEdit && images.length < 5 && (
+                  <button
+                    type="button"
+                    onClick={() => imgInputRef.current?.click()}
+                    disabled={uploadingImg}
+                    className="h-16 w-16 flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border text-muted hover:text-foreground hover:border-primary transition-colors disabled:opacity-60"
+                    title="Agregar imágenes"
+                  >
+                    <ImagePlus className="h-5 w-5" />
+                    <span className="text-[10px]">{uploadingImg ? '...' : 'Agregar'}</span>
+                  </button>
+                )}
+                <input
+                  ref={imgInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  multiple
+                  className="hidden"
+                  onChange={handleAddImages}
+                />
+              </div>
+            )}
           </div>
           <div className="bg-card rounded-xl border border-border p-6">
             <h2 className="font-display font-semibold text-lg mb-4">Información general</h2>
