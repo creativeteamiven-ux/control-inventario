@@ -277,7 +277,7 @@ export default function Inventory() {
       className="flex gap-6"
     >
       <aside className="w-60 shrink-0 hidden lg:block">
-        <div className="sticky top-24 flex flex-col max-h-[calc(100vh-7rem)] rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+        <div className="sticky top-0 flex flex-col max-h-[calc(100vh-6rem)] rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
           {/* Encabezado del panel */}
           <div className="shrink-0 px-4 py-3 border-b border-border bg-gradient-to-r from-primary/10 to-transparent">
             <div className="flex items-center justify-between">
