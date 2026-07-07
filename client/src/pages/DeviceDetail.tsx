@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Package, Pencil, QrCode, TrendingDown } from 'lucide-react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, Package, Pencil, QrCode, TrendingDown, Trash2 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import EditDeviceModal from '@/components/EditDeviceModal';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -36,8 +37,11 @@ const STATUS_BADGE: Record<string, string> = {
 
 export default function DeviceDetail() {
   const { id } = useParams<{ id: string }>();
-  const { canViewCost } = usePermissions();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { canViewCost, hasPermission } = usePermissions();
   const [editOpen, setEditOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const { data, isLoading } = useQuery({
     queryKey: ['device', id],
     queryFn: async () => {
@@ -94,6 +98,23 @@ export default function DeviceDetail() {
     images: { url: string }[];
   };
 
+  const canDelete = hasPermission('inventory.delete');
+
+  const handleDelete = async () => {
+    if (!confirm(`¿Eliminar el equipo "${d.name}" (${d.internalCode}) del inventario?\n\nSe quitará del listado. Esta acción no se puede deshacer desde la aplicación.`)) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/api/devices/${d.id}`);
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
+      toast.success('Equipo eliminado del inventario');
+      navigate('/inventory');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error al eliminar el equipo';
+      toast.error(msg);
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header: en móvil en dos filas para que Editar siempre sea visible */}
@@ -122,6 +143,18 @@ export default function DeviceDetail() {
             <Pencil className="h-4 w-4 mr-2" />
             Editar
           </Button>
+          {canDelete && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="min-h-touch sm:min-h-0 shrink-0 text-destructive border-destructive/50 hover:bg-destructive/10"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {deleting ? 'Eliminando...' : 'Eliminar'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -262,8 +295,8 @@ export default function DeviceDetail() {
                 </p>
               </div>
             )}
-            {/* En móvil: botón Editar también aquí para acceso rápido al final del scroll */}
-            <div className="mt-6 pt-4 border-t border-border md:hidden">
+            {/* En móvil: botones Editar / Eliminar también aquí para acceso rápido al final del scroll */}
+            <div className="mt-6 pt-4 border-t border-border md:hidden space-y-2">
               <Button
                 variant="default"
                 className="w-full min-h-touch"
@@ -272,6 +305,17 @@ export default function DeviceDetail() {
                 <Pencil className="h-4 w-4 mr-2" />
                 Editar equipo
               </Button>
+              {canDelete && (
+                <Button
+                  variant="outline"
+                  className="w-full min-h-touch text-destructive border-destructive/50 hover:bg-destructive/10"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {deleting ? 'Eliminando...' : 'Eliminar equipo'}
+                </Button>
+              )}
             </div>
           </div>
         </div>

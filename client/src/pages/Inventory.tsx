@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Package, Grid3X3, List, Plus, Search, Download, Upload, Truck, FolderTree, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import { Package, Grid3X3, List, Plus, Search, Download, Upload, Truck, FolderTree, AlertCircle, CheckCircle, XCircle, MapPin, SlidersHorizontal } from 'lucide-react';
 import { addToStoredCart, addManyToStoredCart, getStoredCart } from '@/lib/transferCart';
 import { api } from '@/lib/api';
 import AddDeviceModal from '@/components/AddDeviceModal';
@@ -38,6 +38,7 @@ export default function Inventory() {
   const [page, setPage] = useState(1);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [locationFilter, setLocationFilter] = useState<string | null>(null);
   const [needsReview, setNeedsReview] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importErrors, setImportErrors] = useState<{ row: number; message: string }[] | null>(null);
@@ -168,7 +169,7 @@ export default function Inventory() {
   };
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['devices', search, page, limit, categoryId, statusFilter, needsReview],
+    queryKey: ['devices', search, page, limit, categoryId, statusFilter, locationFilter, needsReview],
     queryFn: async () => {
       const { data } = await api.get('/api/devices', {
         params: {
@@ -177,6 +178,7 @@ export default function Inventory() {
           limit,
           categoryId: categoryId || undefined,
           status: statusFilter || undefined,
+          location: locationFilter || undefined,
           needsReview: needsReview ? 'true' : undefined,
         },
       });
@@ -274,48 +276,113 @@ export default function Inventory() {
       animate={{ opacity: 1 }}
       className="flex gap-6"
     >
-      <aside className="w-56 shrink-0 hidden lg:block">
-        <div className="sticky top-24 rounded-xl border border-border bg-card p-3">
-          <h2 className="flex items-center gap-2 font-semibold text-foreground mb-3 px-1">
-            <FolderTree className="h-4 w-4 text-primary" />
-            Ver por categoría
-          </h2>
-          <nav className="space-y-0.5">
-            <button
-              onClick={() => { setCategoryId(null); setNeedsReview(false); setPage(1); }}
-              className={cn(
-                'w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors',
-                !categoryId && !needsReview ? 'bg-primary/20 text-primary' : 'text-muted hover:bg-card-hover hover:text-foreground'
+      <aside className="w-60 shrink-0 hidden lg:block">
+        <div className="sticky top-24 rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+          {/* Encabezado del panel */}
+          <div className="px-4 py-3 border-b border-border bg-gradient-to-r from-primary/10 to-transparent">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <SlidersHorizontal className="h-4 w-4 text-primary" />
+                Filtros
+              </span>
+              {(categoryId || needsReview || locationFilter) && (
+                <button
+                  onClick={() => { setCategoryId(null); setNeedsReview(false); setLocationFilter(null); setPage(1); }}
+                  className="text-xs text-muted hover:text-primary transition-colors"
+                >
+                  Limpiar
+                </button>
               )}
-            >
-              Todas ({totalDevicesInCategories})
-            </button>
-            <button
-              onClick={() => { setNeedsReview(true); setPage(1); }}
-              className={cn(
-                'w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2',
-                needsReview ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400' : 'text-muted hover:bg-card-hover hover:text-foreground'
-              )}
-              title="Operativos pero con observación o condición &lt; 70%"
-            >
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              Con observación
-            </button>
-            {categoriesFlat.map((cat) => (
+            </div>
+          </div>
+
+          {/* Sección: Categorías */}
+          <div className="p-3">
+            <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted mb-2 px-1">
+              <FolderTree className="h-3.5 w-3.5" />
+              Categorías
+            </h3>
+            <nav className="space-y-0.5 max-h-[38vh] overflow-y-auto pr-1 -mr-1">
               <button
-                key={cat.id}
-                onClick={() => { setCategoryId(cat.id); setNeedsReview(false); setPage(1); }}
+                onClick={() => { setCategoryId(null); setNeedsReview(false); setPage(1); }}
                 className={cn(
-                  'w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex justify-between items-center gap-2',
-                  categoryId === cat.id ? 'bg-primary/20 text-primary font-medium' : 'text-muted hover:bg-card-hover hover:text-foreground'
+                  'group w-full text-left pl-3 pr-2 py-2 rounded-lg text-sm font-medium transition-all flex justify-between items-center gap-2 border-l-2',
+                  !categoryId && !needsReview
+                    ? 'bg-primary/15 text-primary border-primary'
+                    : 'border-transparent text-muted hover:bg-card-hover hover:text-foreground'
                 )}
-                title={cat.name}
               >
-                <span className="truncate">{cat.name}</span>
-                <span className="text-xs text-muted shrink-0">({cat.count})</span>
+                <span>Todas</span>
+                <span className={cn('text-[11px] font-semibold rounded-full px-2 py-0.5', !categoryId && !needsReview ? 'bg-primary/20 text-primary' : 'bg-muted/15 text-muted')}>{totalDevicesInCategories}</span>
               </button>
-            ))}
-          </nav>
+              <button
+                onClick={() => { setNeedsReview(true); setCategoryId(null); setPage(1); }}
+                className={cn(
+                  'w-full text-left pl-3 pr-2 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 border-l-2',
+                  needsReview
+                    ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500'
+                    : 'border-transparent text-muted hover:bg-card-hover hover:text-foreground'
+                )}
+                title="Operativos pero con observación o condición &lt; 70%"
+              >
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                Con observación
+              </button>
+              {categoriesFlat.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => { setCategoryId(cat.id); setNeedsReview(false); setPage(1); }}
+                  className={cn(
+                    'w-full text-left pl-3 pr-2 py-2 rounded-lg text-sm transition-all flex justify-between items-center gap-2 border-l-2',
+                    categoryId === cat.id
+                      ? 'bg-primary/15 text-primary font-medium border-primary'
+                      : 'border-transparent text-muted hover:bg-card-hover hover:text-foreground'
+                  )}
+                  title={cat.name}
+                >
+                  <span className="truncate">{cat.name}</span>
+                  <span className={cn('text-[11px] font-semibold rounded-full px-2 py-0.5 shrink-0', categoryId === cat.id ? 'bg-primary/20 text-primary' : 'bg-muted/15 text-muted')}>{cat.count}</span>
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          {/* Sección: Lugares */}
+          <div className="p-3 border-t border-border">
+            <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted mb-2 px-1">
+              <MapPin className="h-3.5 w-3.5" />
+              Lugares
+            </h3>
+            <nav className="space-y-0.5">
+              <button
+                onClick={() => { setLocationFilter(null); setPage(1); }}
+                className={cn(
+                  'w-full text-left pl-3 pr-2 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 border-l-2',
+                  !locationFilter
+                    ? 'bg-primary/15 text-primary border-primary'
+                    : 'border-transparent text-muted hover:bg-card-hover hover:text-foreground'
+                )}
+              >
+                Todos los lugares
+              </button>
+              {Object.entries(DEVICE_LOCATION_LABELS).map(([value, label]) => (
+                <button
+                  key={value}
+                  onClick={() => { setLocationFilter(value); setPage(1); }}
+                  className={cn(
+                    'w-full text-left pl-3 pr-2 py-2 rounded-lg text-sm transition-all flex items-center gap-2 border-l-2',
+                    locationFilter === value
+                      ? 'bg-primary/15 text-primary font-medium border-primary'
+                      : 'border-transparent text-muted hover:bg-card-hover hover:text-foreground'
+                  )}
+                  title={label}
+                >
+                  <MapPin className={cn('h-3.5 w-3.5 shrink-0', locationFilter === value ? 'text-primary' : 'text-muted/60')} />
+                  <span className="truncate">{label}</span>
+                </button>
+              ))}
+            </nav>
+          </div>
         </div>
       </aside>
 
@@ -338,6 +405,17 @@ export default function Inventory() {
               <option value="__needs_review__">Con observación</option>
               {categoriesFlat.map((cat) => (
                 <option key={cat.id} value={cat.id}>{cat.name} ({cat.count})</option>
+              ))}
+            </select>
+            <select
+              value={locationFilter ?? ''}
+              onChange={(e) => { setLocationFilter(e.target.value || null); setPage(1); }}
+              className="flex h-10 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary min-w-[160px]"
+              title="Filtrar por lugar"
+            >
+              <option value="">Todos los lugares</option>
+              {Object.entries(DEVICE_LOCATION_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
               ))}
             </select>
           </div>
@@ -847,7 +925,7 @@ export default function Inventory() {
 
       {!isLoading && devices.length === 0 && (
         <div className="bg-card rounded-xl border border-border p-12 text-center text-muted">
-          No hay equipos que coincidan con la búsqueda{needsReview ? ' (ninguno operativo con observación)' : statusFilter ? ` con estado "${deviceStatusLabel(statusFilter)}"` : categoryId ? ' en esta categoría' : ''}.
+          No hay equipos que coincidan con la búsqueda{needsReview ? ' (ninguno operativo con observación)' : statusFilter ? ` con estado "${deviceStatusLabel(statusFilter)}"` : categoryId ? ' en esta categoría' : ''}{locationFilter ? ` en "${deviceLocationLabel(locationFilter)}"` : ''}.
         </div>
       )}
       </div>
