@@ -25,13 +25,15 @@ const LOW_CONDITION_THRESHOLD = 40;
 export async function computeAlerts(prisma: PrismaClient): Promise<Alert[]> {
   const now = new Date();
   const soon = new Date(now.getTime() + WARRANTY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const recentlyExpired = new Date(now.getTime() - WARRANTY_WINDOW_DAYS * 24 * 60 * 60 * 1000);
   const alerts: Alert[] = [];
 
-  // Garantías por vencer (próximos 30 días) o ya vencidas en los últimos 30 días.
+  // Garantías por vencer (próximos 30 días) o vencidas recientemente (últimos 30 días).
+  // No se alerta de garantías vencidas hace mucho para evitar ruido permanente.
   const warrantyDevices = await prisma.device.findMany({
     where: {
       deletedAt: null,
-      warrantyExpiry: { not: null, lte: soon },
+      warrantyExpiry: { gte: recentlyExpired, lte: soon },
       status: { not: 'RETIRED' },
     },
     select: { id: true, name: true, internalCode: true, warrantyExpiry: true },
@@ -108,19 +110,56 @@ export async function computeAlerts(prisma: PrismaClient): Promise<Alert[]> {
   return alerts.sort((a, b) => order[a.severity] - order[b.severity]);
 }
 
+const TYPE_LABELS: Record<Alert['type'], string> = {
+  loan_overdue: 'Préstamos vencidos',
+  maintenance: 'Mantenimientos pendientes',
+  warranty: 'Garantías',
+  low_condition: 'Condición baja',
+};
+
+const MAX_ITEMS_PER_TYPE = 10;
+
 export function alertsToHtml(alerts: Alert[]): string {
   if (alerts.length === 0) return '<p>No hay alertas pendientes. Todo en orden ✅</p>';
-  const items = alerts
-    .map(
-      (a) =>
-        `<li style="margin-bottom:8px"><strong>[${a.severity.toUpperCase()}] ${a.title}:</strong> ${a.message}</li>`
-    )
+
+  const bySeverity = {
+    critical: alerts.filter((a) => a.severity === 'critical').length,
+    warning: alerts.filter((a) => a.severity === 'warning').length,
+    info: alerts.filter((a) => a.severity === 'info').length,
+  };
+
+  // Agrupar por tipo para un resumen escaneable.
+  const groups = new Map<Alert['type'], Alert[]>();
+  for (const a of alerts) {
+    const arr = groups.get(a.type) || [];
+    arr.push(a);
+    groups.set(a.type, arr);
+  }
+
+  const sections = Array.from(groups.entries())
+    .map(([type, list]) => {
+      const shown = list.slice(0, MAX_ITEMS_PER_TYPE);
+      const rest = list.length - shown.length;
+      const items = shown
+        .map((a) => `<li style="margin-bottom:4px">${a.message}</li>`)
+        .join('');
+      const more = rest > 0 ? `<li style="color:#888">…y ${rest} más</li>` : '';
+      return `
+        <h3 style="margin:16px 0 4px">${TYPE_LABELS[type]} <span style="color:#888">(${list.length})</span></h3>
+        <ul style="margin-top:0">${items}${more}</ul>`;
+    })
     .join('');
+
   return `
-    <div style="font-family:Arial,sans-serif">
-      <h2>Resumen de alertas — The Warehouse</h2>
-      <p>Tienes <strong>${alerts.length}</strong> alerta(s) pendiente(s):</p>
-      <ul>${items}</ul>
-      <p style="color:#888;font-size:12px">Correo automático del sistema de inventario.</p>
+    <div style="font-family:Arial,sans-serif;max-width:640px">
+      <h2 style="margin-bottom:4px">Resumen de alertas — The Warehouse</h2>
+      <p style="margin-top:0">
+        Tienes <strong>${alerts.length}</strong> alerta(s):
+        <span style="color:#c0392b">🔴 ${bySeverity.critical} críticas</span> ·
+        <span style="color:#d68910">🟠 ${bySeverity.warning} advertencias</span> ·
+        <span style="color:#2980b9">🔵 ${bySeverity.info} info</span>
+      </p>
+      ${sections}
+      <p style="color:#888;font-size:12px;margin-top:20px">Correo automático del sistema de inventario.</p>
     </div>`;
 }

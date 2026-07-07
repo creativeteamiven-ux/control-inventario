@@ -2,11 +2,32 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { computeAlerts, alertsToHtml } from '../lib/alerts.js';
+import { computeAlerts } from '../lib/alerts.js';
 import { sendMail, verifyMailer, isMailerConfigured, getAlertRecipients } from '../lib/mailer.js';
+import { sendAlertDigest } from '../lib/notify.js';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+/**
+ * Endpoint para CRON EXTERNO (Vercel Cron, cron-job.org, GitHub Actions, etc.).
+ * No usa JWT: se autentica con un token secreto en la cabecera 'x-cron-secret'
+ * (o query ?secret=). Definir ALERT_CRON_SECRET en el servidor para habilitarlo.
+ * Va ANTES de authenticate para no requerir sesión de usuario.
+ */
+router.post('/cron/digest', async (req, res, next) => {
+  try {
+    const secret = process.env.ALERT_CRON_SECRET;
+    if (!secret) throw new AppError(404, 'Cron no habilitado (falta ALERT_CRON_SECRET).');
+    const provided = req.header('x-cron-secret') || (req.query.secret as string) || '';
+    if (provided !== secret) throw new AppError(401, 'Token de cron inválido.');
+    const onlyIfAny = process.env.ALERT_DIGEST_ALWAYS !== 'true';
+    const result = await sendAlertDigest(prisma, { onlyIfAny });
+    res.json({ ok: result.sent, ...result });
+  } catch (e) {
+    next(e);
+  }
+});
 
 router.use(authenticate);
 
@@ -61,21 +82,10 @@ router.post('/test', requireRole('ADMIN'), async (req: AuthRequest, res, next) =
 router.post('/send-digest', requireRole('ADMIN'), async (req: AuthRequest, res, next) => {
   try {
     if (!isMailerConfigured()) throw new AppError(400, 'El correo no está configurado.');
-    let recipients = getAlertRecipients();
-    if (recipients.length === 0) {
-      const admins = await prisma.user.findMany({ where: { role: 'ADMIN' }, select: { email: true } });
-      recipients = admins.map((a) => a.email);
-    }
-    if (req.body?.to) recipients = [String(req.body.to)];
-    if (recipients.length === 0) throw new AppError(400, 'No hay destinatarios');
-    const alerts = await computeAlerts(prisma);
-    const result = await sendMail({
-      to: recipients,
-      subject: `The Warehouse — ${alerts.length} alerta(s) pendiente(s)`,
-      html: alertsToHtml(alerts),
-    });
-    if (!result.sent) throw new AppError(500, result.error || 'No se pudo enviar');
-    res.json({ ok: true, recipients, alertCount: alerts.length });
+    // Envío manual: siempre manda (aunque no haya alertas) para confirmar que funciona.
+    const result = await sendAlertDigest(prisma, { to: req.body?.to ? String(req.body.to) : undefined, onlyIfAny: false });
+    if (!result.sent) throw new AppError(result.reason === 'no-recipients' ? 400 : 500, result.error || result.reason || 'No se pudo enviar');
+    res.json({ ok: true, recipients: result.recipients, alertCount: result.alertCount });
   } catch (e) {
     next(e);
   }

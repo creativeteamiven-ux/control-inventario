@@ -29,6 +29,7 @@ import expensesRouter from './routes/expenses.js';
 import budgetsRouter from './routes/budgets.js';
 import alertsRouter from './routes/alerts.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { startAlertScheduler } from './lib/scheduler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // En Vercel (Root Directory = server) no hay carpeta padre; cargar .env desde el mismo directorio que index.js
@@ -200,5 +201,7 @@ if (!process.env.VERCEL) {
   const host = process.env.RENDER ? '0.0.0.0' : 'localhost';
   app.listen(PORT, host, () => {
     console.log(`🚀 The Warehouse API running on http://${host}:${PORT}`);
+    // Programador de resúmenes por correo (entornos always-on: local/Render).
+    startAlertScheduler(new PrismaClient());
   });
 }
