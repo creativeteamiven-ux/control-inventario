@@ -1,19 +1,23 @@
+import { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import Login from '@/pages/Login';
 import Layout from '@/components/Layout';
-import Dashboard from '@/pages/Dashboard';
-import Inventory from '@/pages/Inventory';
-import DeviceDetail from '@/pages/DeviceDetail';
-import Scanner from '@/pages/Scanner';
-import Categories from '@/pages/Categories';
-import Maintenance from '@/pages/Maintenance';
-import Loans from '@/pages/Loans';
-import Movements from '@/pages/Movements';
-import Locations from '@/pages/Locations';
-import Reports from '@/pages/Reports';
-import Users from '@/pages/Users';
-import Settings from '@/pages/Settings';
+
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const Inventory = lazy(() => import('@/pages/Inventory'));
+const DeviceDetail = lazy(() => import('@/pages/DeviceDetail'));
+const Scanner = lazy(() => import('@/pages/Scanner'));
+const Categories = lazy(() => import('@/pages/Categories'));
+const Maintenance = lazy(() => import('@/pages/Maintenance'));
+const Loans = lazy(() => import('@/pages/Loans'));
+const Movements = lazy(() => import('@/pages/Movements'));
+const Locations = lazy(() => import('@/pages/Locations'));
+const Reports = lazy(() => import('@/pages/Reports'));
+const Expenses = lazy(() => import('@/pages/Expenses'));
+const Budgets = lazy(() => import('@/pages/Budgets'));
+const Users = lazy(() => import('@/pages/Users'));
+const Settings = lazy(() => import('@/pages/Settings'));
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -34,14 +38,29 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function PermissionRoute({ permission, children }: { permission: string; children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!user?.permissions?.includes(permission)) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
 // Los QR generados apuntan a /device/:id; redirigimos a la ficha del inventario.
 function DeviceRedirect() {
   const { id } = useParams<{ id: string }>();
   return <Navigate to={`/inventory/${id}`} replace />;
 }
 
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <div className="animate-pulse text-muted">Cargando...</div>
+    </div>
+  );
+}
+
 function AppRoutes() {
   return (
+    <Suspense fallback={<PageLoader />}>
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route
@@ -65,6 +84,22 @@ function AppRoutes() {
         <Route path="locations" element={<Locations />} />
         <Route path="reports" element={<Reports />} />
         <Route
+          path="expenses"
+          element={
+            <PermissionRoute permission="finance.view">
+              <Expenses />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="budgets"
+          element={
+            <PermissionRoute permission="finance.view">
+              <Budgets />
+            </PermissionRoute>
+          }
+        />
+        <Route
           path="users"
           element={
             <AdminRoute>
@@ -83,6 +118,7 @@ function AppRoutes() {
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
+    </Suspense>
   );
 }
 

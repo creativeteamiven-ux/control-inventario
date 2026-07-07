@@ -10,6 +10,8 @@ import {
   HandCoins,
   ArrowLeftRight,
   FileBarChart,
+  Receipt,
+  PiggyBank,
   Users,
   Settings,
   ChevronLeft,
@@ -19,8 +21,9 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
+import { usePermissions } from '@/hooks/usePermissions';
 
-const navItems = [
+const navItems: { to: string; icon: typeof LayoutDashboard; label: string; perm?: string }[] = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/inventory', icon: Package, label: 'Inventario' },
   { to: '/scan', icon: ScanLine, label: 'Escanear' },
@@ -30,6 +33,8 @@ const navItems = [
   { to: '/loans', icon: HandCoins, label: 'Préstamos' },
   { to: '/movements', icon: ArrowLeftRight, label: 'Movimientos' },
   { to: '/reports', icon: FileBarChart, label: 'Reportes' },
+  { to: '/expenses', icon: Receipt, label: 'Gastos', perm: 'finance.view' },
+  { to: '/budgets', icon: PiggyBank, label: 'Presupuestos', perm: 'finance.view' },
   { to: '/users', icon: Users, label: 'Usuarios' },
   { to: '/settings', icon: Settings, label: 'Configuración' },
 ];
@@ -51,10 +56,12 @@ function NavContent({
   showLogout?: boolean;
 }) {
   const { logout } = useAuth();
+  const { hasPermission } = usePermissions();
+  const visibleItems = navItems.filter((item) => !item.perm || hasPermission(item.perm));
   return (
     <>
       <nav className="flex-1 p-2 space-y-1 overflow-y-auto">
-        {navItems.map((item) => (
+        {visibleItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

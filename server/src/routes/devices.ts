@@ -5,8 +5,10 @@ import { fileURLToPath } from 'url';
 import { PrismaClient } from '@prisma/client';
 import { createDeviceSchema, updateDeviceSchema, deviceFilterSchema } from '@soundvault/shared';
 import { AppError } from '../middleware/errorHandler.js';
-import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
+import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { stripCostFromResponse } from '../lib/permissions.js';
+import { writeAudit } from '../lib/audit.js';
+import { computeDepreciation } from '../lib/depreciation.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -138,11 +140,56 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
+// Resumen financiero del equipo: depreciación, valor en libros y costo total de propiedad (TCO).
+router.get('/:id/financials', requirePermission('sensitive.view_cost'), async (req, res, next) => {
+  try {
+    const device = await prisma.device.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+      include: { category: { select: { usefulLifeYears: true } } },
+    });
+    if (!device) throw new AppError(404, 'Equipo no encontrado');
+
+    const purchasePrice = device.purchasePrice != null ? Number(device.purchasePrice) : null;
+    const depreciation = computeDepreciation(
+      purchasePrice,
+      device.purchaseDate,
+      device.category?.usefulLifeYears,
+    );
+
+    const maintAgg = await prisma.maintenance.aggregate({
+      where: { deviceId: device.id },
+      _sum: { cost: true },
+    });
+    const maintenanceCost = Number(maintAgg._sum.cost || 0);
+
+    const expenses = await prisma.expense.findMany({
+      where: { deviceId: device.id },
+      select: { amount: true, currency: true },
+    });
+    const expensesByCurrency: Record<string, number> = {};
+    for (const e of expenses) {
+      expensesByCurrency[e.currency] = (expensesByCurrency[e.currency] || 0) + Number(e.amount);
+    }
+    // TCO en COP (moneda base): precio de compra + mantenimientos + gastos en COP.
+    const expensesCOP = expensesByCurrency['COP'] || 0;
+    const tcoCOP = (purchasePrice || 0) + maintenanceCost + expensesCOP;
+
+    res.json({
+      depreciation,
+      maintenanceCost,
+      expensesByCurrency,
+      tcoCOP: Math.round(tcoCOP * 100) / 100,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // Cambio masivo de estado (y opcionalmente ubicación).
 // Si status es MAINTENANCE: se crea un registro en Maintenance por cada equipo (para que aparezca en el módulo Mantenimiento).
 // Si status es LOANED: se crea un registro en LoanRecord por cada equipo (para que aparezca en el módulo Préstamos).
 const validStatuses = ['ACTIVE', 'MAINTENANCE', 'LOANED', 'DAMAGED', 'LOST', 'RETIRED'];
-router.patch('/bulk', requireRole('ADMIN', 'MANAGER'), async (req: AuthRequest, res, next) => {
+router.patch('/bulk', requirePermission('inventory.edit'), async (req: AuthRequest, res, next) => {
   try {
     const { deviceIds, status, location } = req.body as { deviceIds?: string[]; status?: string; location?: string };
     if (!Array.isArray(deviceIds) || deviceIds.length === 0) {
@@ -220,13 +267,14 @@ router.patch('/bulk', requireRole('ADMIN', 'MANAGER'), async (req: AuthRequest, 
         );
       }
     });
+    await writeAudit(req, 'Device', ids.join(','), 'STATUS_CHANGE', { status, location, count: ids.length });
     res.json({ updated: ids.length });
   } catch (e) {
     next(e);
   }
 });
 
-router.post('/', requireRole('ADMIN', 'MANAGER'), async (req: AuthRequest, res, next) => {
+router.post('/', requirePermission('inventory.create'), async (req: AuthRequest, res, next) => {
   try {
     const parsed = createDeviceSchema.safeParse(req.body);
     if (!parsed.success) throw new AppError(400, parsed.error.errors[0]?.message || 'Datos inválidos');
@@ -246,13 +294,14 @@ router.post('/', requireRole('ADMIN', 'MANAGER'), async (req: AuthRequest, res, 
       data: data as Parameters<typeof prisma.device.create>[0]['data'],
       include: { category: true },
     });
+    await writeAudit(req, 'Device', device.id, 'CREATE', { name: device.name, internalCode: device.internalCode });
     res.status(201).json(device);
   } catch (e) {
     next(e);
   }
 });
 
-router.patch('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res, next) => {
+router.patch('/:id', requirePermission('inventory.edit'), async (req: AuthRequest, res, next) => {
   try {
     const parsed = updateDeviceSchema.safeParse(req.body);
     if (!parsed.success) throw new AppError(400, parsed.error.errors[0]?.message || 'Datos inválidos');
@@ -264,18 +313,20 @@ router.patch('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res, next) => 
       data: update as Parameters<typeof prisma.device.update>[0]['data'],
       include: { category: true, images: true },
     });
+    await writeAudit(req, 'Device', device.id, 'UPDATE', parsed.data);
     res.json(device);
   } catch (e) {
     next(e);
   }
 });
 
-router.delete('/:id', requireRole('ADMIN'), async (req, res, next) => {
+router.delete('/:id', requirePermission('inventory.delete'), async (req: AuthRequest, res, next) => {
   try {
     await prisma.device.update({
       where: { id: req.params.id },
       data: { deletedAt: new Date() },
     });
+    await writeAudit(req, 'Device', req.params.id, 'DELETE');
     res.status(204).send();
   } catch (e) {
     next(e);

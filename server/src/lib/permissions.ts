@@ -28,6 +28,9 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: 'movements.create', label: 'Registrar movimientos', module: 'Movimientos', description: 'Cargar y registrar traslados' },
   { key: 'reports.view', label: 'Ver reportes', module: 'Reportes', description: 'Acceder al módulo de reportes' },
   { key: 'reports.export', label: 'Exportar reportes', module: 'Reportes', description: 'Descargar PDF/Excel de reportes' },
+  { key: 'finance.view', label: 'Ver gastos', module: 'Gastos', description: 'Ver gastos y reportes financieros' },
+  { key: 'finance.manage', label: 'Gestionar gastos', module: 'Gastos', description: 'Registrar, editar y eliminar gastos' },
+  { key: 'finance.export', label: 'Exportar finanzas', module: 'Gastos', description: 'Descargar reportes financieros en Excel' },
   { key: 'users.view', label: 'Ver usuarios', module: 'Usuarios', description: 'Ver listado de usuarios' },
   { key: 'users.create', label: 'Crear usuarios', module: 'Usuarios', description: 'Crear nuevos usuarios' },
   { key: 'users.edit', label: 'Editar usuarios', module: 'Usuarios', description: 'Editar usuarios y permisos' },
@@ -47,6 +50,7 @@ const ROLE_DEFAULTS: Record<string, string[]> = {
     'loans.view', 'loans.create',
     'movements.view', 'movements.create',
     'reports.view', 'reports.export',
+    'finance.view', 'finance.manage',
   ],
   VIEWER: [
     'inventory.view', 'categories.view', 'maintenance.view', 'loans.view',

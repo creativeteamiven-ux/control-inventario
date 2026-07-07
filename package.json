@@ -1,8 +1,8 @@
 {
-  "name": "soundvault",
+  "name": "the-warehouse",
   "version": "1.0.0",
   "private": true,
-  "description": "Sistema de Gestión de Inventario de Audio - Iglesia & Estudio de Grabación",
+  "description": "The Warehouse - Sistema de Gestión de Inventario de Audio (Iglesia & Estudio de Grabación)",
   "scripts": {
     "dev": "npx concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:local": "node scripts/dev-local.mjs",
@@ -16,6 +16,8 @@
     "db:generate": "cd server && npx prisma generate",
     "db:push": "cd server && npx prisma db push",
     "db:migrate": "cd server && npx prisma migrate dev",
+    "db:migrate:deploy": "cd server && npx prisma migrate deploy",
+    "db:migrate:baseline": "cd server && npx prisma migrate resolve --applied 0_init",
     "db:seed": "cd server && npx prisma db seed",
     "db:clean": "cd server && npx tsx scripts/clean-db-keep-users.ts",
     "db:studio": "cd server && npx prisma studio",

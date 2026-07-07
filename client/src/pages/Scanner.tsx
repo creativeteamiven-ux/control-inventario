@@ -15,9 +15,12 @@ import {
   Loader2,
   CheckCircle2,
   SwitchCamera,
+  ShoppingCart,
+  Check,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
+import { addToStoredCart, getStoredCart } from '@/lib/transferCart';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { deviceStatusLabel, deviceLocationLabel } from '@/lib/statusLabels';
@@ -87,6 +90,7 @@ export default function Scanner() {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [cameras, setCameras] = useState<CameraOption[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
+  const [addedToCart, setAddedToCart] = useState(false);
 
   const secureContext =
     typeof window !== 'undefined' &&
@@ -223,6 +227,18 @@ export default function Scanner() {
       void stopCamera();
     };
   }, [stopCamera]);
+
+  // Al cambiar el equipo, reflejar si ya está en el carrito de traslado.
+  useEffect(() => {
+    setAddedToCart(device ? getStoredCart().some((d) => d.id === device.id) : false);
+  }, [device]);
+
+  const addToCart = () => {
+    if (!device) return;
+    addToStoredCart({ id: device.id, internalCode: device.internalCode, name: device.name });
+    setAddedToCart(true);
+    toast.success('Agregado al carrito de traslado. Ve a Movimientos para continuar.');
+  };
 
   const reset = useCallback(async () => {
     setDevice(null);
@@ -401,6 +417,26 @@ export default function Scanner() {
               </div>
             </div>
           )}
+
+          {/* Carrito de traslado */}
+          <div className="p-4 border-t border-border">
+            <Button
+              variant={addedToCart ? 'outline' : 'default'}
+              className="w-full min-h-touch"
+              disabled={addedToCart}
+              onClick={addToCart}
+            >
+              {addedToCart ? (
+                <>
+                  <Check className="h-4 w-4 mr-2" /> Ya está en el carrito
+                </>
+              ) : (
+                <>
+                  <ShoppingCart className="h-4 w-4 mr-2" /> Agregar al carrito de traslado
+                </>
+              )}
+            </Button>
+          </div>
 
           {/* Acciones */}
           <div className="p-4 border-t border-border flex flex-col sm:flex-row gap-2">

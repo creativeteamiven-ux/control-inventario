@@ -3,8 +3,9 @@ import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 import { createUserSchema, updateUserSchema } from '@soundvault/shared';
 import { AppError } from '../middleware/errorHandler.js';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
 import { getEffectivePermissions, getDefaultPermissionsForRole, PERMISSIONS } from '../lib/permissions.js';
+import { writeAudit } from '../lib/audit.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -68,6 +69,7 @@ router.post('/', async (req, res, next) => {
       },
       select: { id: true, name: true, email: true, role: true, permissions: true },
     });
+    await writeAudit(req as AuthRequest, 'User', user.id, 'CREATE', { email: user.email, role: user.role });
     res.status(201).json(user);
   } catch (e) {
     next(e);
@@ -90,6 +92,7 @@ router.patch('/:id', async (req, res, next) => {
       data: update as Parameters<typeof prisma.user.update>[0]['data'],
       select: { id: true, name: true, email: true, role: true, permissions: true },
     });
+    await writeAudit(req as AuthRequest, 'User', user.id, 'UPDATE', { role: parsed.data.role });
     res.json(user);
   } catch (e) {
     next(e);
@@ -99,6 +102,7 @@ router.patch('/:id', async (req, res, next) => {
 router.delete('/:id', async (req, res, next) => {
   try {
     await prisma.user.delete({ where: { id: req.params.id } });
+    await writeAudit(req as AuthRequest, 'User', req.params.id, 'DELETE');
     res.status(204).send();
   } catch (e) {
     next(e);

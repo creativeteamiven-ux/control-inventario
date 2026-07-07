@@ -10,3 +10,5 @@ export * from './maintenance';
 export * from './loan';
 export * from './movement';
 export * from './user';
+export * from './expense';
+export * from './budget';

@@ -6,6 +6,7 @@ import { loginSchema } from '@soundvault/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { getEffectivePermissions } from '../lib/permissions.js';
+import { writeAudit } from '../lib/audit.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -36,6 +37,8 @@ router.post('/login', async (req, res, next) => {
     const payload = buildPayload(user);
     const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: ACCESS_EXPIRY });
     const refreshToken = jwt.sign({ ...payload, type: 'refresh' }, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRY });
+    (req as AuthRequest).user = { userId: user.id, email: user.email, role: user.role, permissions: payload.permissions };
+    await writeAudit(req as AuthRequest, 'User', user.id, 'LOGIN', { email: user.email });
     res.json({
       accessToken,
       refreshToken,

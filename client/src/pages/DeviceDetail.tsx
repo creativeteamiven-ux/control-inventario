@@ -1,13 +1,29 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Package, Pencil, QrCode } from 'lucide-react';
+import { ArrowLeft, Package, Pencil, QrCode, TrendingDown } from 'lucide-react';
 import EditDeviceModal from '@/components/EditDeviceModal';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { deviceStatusLabel, deviceLocationLabel } from '@/lib/statusLabels';
 import { usePermissions } from '@/hooks/usePermissions';
+import { formatMoney } from '@/lib/expenseLabels';
+
+interface Financials {
+  depreciation: {
+    purchasePrice: number | null;
+    usefulLifeYears: number;
+    ageYears: number;
+    annualDepreciation: number;
+    accumulatedDepreciation: number;
+    bookValue: number | null;
+    fullyDepreciated: boolean;
+  };
+  maintenanceCost: number;
+  expensesByCurrency: Record<string, number>;
+  tcoCOP: number;
+}
 
 const STATUS_BADGE: Record<string, string> = {
   ACTIVE: 'bg-green-500/20 text-green-400',
@@ -38,6 +54,15 @@ export default function DeviceDetail() {
       return data;
     },
     enabled: !!id,
+  });
+
+  const { data: financials } = useQuery<Financials>({
+    queryKey: ['device-financials', id],
+    queryFn: async () => {
+      const { data } = await api.get(`/api/devices/${id}/financials`);
+      return data;
+    },
+    enabled: !!id && canViewCost(),
   });
 
   if (isLoading || !data) {
@@ -176,6 +201,65 @@ export default function DeviceDetail() {
               <div className="mt-4 pt-4 border-t border-border">
                 <dt className="text-sm text-muted">Notas</dt>
                 <dd className="mt-1">{d.notes}</dd>
+              </div>
+            )}
+            {/* Tarjeta financiera: depreciación + costo total de propiedad (TCO) */}
+            {canViewCost() && financials && (
+              <div className="mt-6 pt-4 border-t border-border">
+                <h3 className="font-display font-semibold text-base mb-3 flex items-center gap-2">
+                  <TrendingDown className="h-5 w-5 text-primary" /> Depreciación y costos
+                </h3>
+                <dl className="grid sm:grid-cols-2 gap-4">
+                  <div>
+                    <dt className="text-sm text-muted">Valor en libros (actual)</dt>
+                    <dd className="font-semibold text-lg">
+                      {financials.depreciation.bookValue != null
+                        ? formatMoney(financials.depreciation.bookValue, 'COP')
+                        : '—'}
+                      {financials.depreciation.fullyDepreciated && (
+                        <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-500 align-middle">
+                          Totalmente depreciado
+                        </span>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm text-muted">Costo total (TCO, COP)</dt>
+                    <dd className="font-semibold text-lg">{formatMoney(financials.tcoCOP, 'COP')}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm text-muted">Depreciación acumulada</dt>
+                    <dd>{formatMoney(financials.depreciation.accumulatedDepreciation, 'COP')}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm text-muted">Depreciación anual</dt>
+                    <dd>{formatMoney(financials.depreciation.annualDepreciation, 'COP')}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm text-muted">Vida útil / Antigüedad</dt>
+                    <dd>{financials.depreciation.usefulLifeYears} años / {financials.depreciation.ageYears} años</dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm text-muted">Gasto en mantenimientos</dt>
+                    <dd>{formatMoney(financials.maintenanceCost, 'COP')}</dd>
+                  </div>
+                  {Object.entries(financials.expensesByCurrency).length > 0 && (
+                    <div className="sm:col-span-2">
+                      <dt className="text-sm text-muted">Gastos registrados</dt>
+                      <dd className="flex flex-wrap gap-2 mt-1">
+                        {Object.entries(financials.expensesByCurrency).map(([cur, total]) => (
+                          <span key={cur} className="px-2 py-0.5 rounded-md bg-card-hover text-sm">
+                            {formatMoney(total, cur)}
+                          </span>
+                        ))}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+                <p className="text-xs text-muted mt-3">
+                  Depreciación lineal según la vida útil de la categoría (5 años por defecto). El TCO suma precio de compra,
+                  mantenimientos y gastos en COP.
+                </p>
               </div>
             )}
             {/* En móvil: botón Editar también aquí para acceso rápido al final del scroll */}

@@ -1,15 +1,16 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import PDFDocument from 'pdfkit';
-import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
+import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { stripCostFromResponse } from '../lib/permissions.js';
+import { computeDepreciation } from '../lib/depreciation.js';
 
 const router = Router();
 const prisma = new PrismaClient();
 
 router.use(authenticate);
 
-router.get('/inventory', requireRole('ADMIN', 'MANAGER'), async (req, res, next) => {
+router.get('/inventory', requirePermission('reports.view'), async (req, res, next) => {
   try {
     const categoryId = req.query.categoryId as string | undefined;
     const where: Record<string, unknown> = { deletedAt: null };
@@ -26,7 +27,7 @@ router.get('/inventory', requireRole('ADMIN', 'MANAGER'), async (req, res, next)
   }
 });
 
-router.get('/inventory/pdf', requireRole('ADMIN', 'MANAGER'), async (req, res, next) => {
+router.get('/inventory/pdf', requirePermission('reports.export'), async (req, res, next) => {
   try {
     const devices = await prisma.device.findMany({
       where: { deletedAt: null },
@@ -104,6 +105,55 @@ router.get('/inventory/pdf', requireRole('ADMIN', 'MANAGER'), async (req, res, n
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename=inventario-thewarehouse.pdf');
     res.send(pdf);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Valoración financiera del inventario: precio de compra total vs valor en libros (depreciado), por categoría.
+router.get('/financial', requirePermission('finance.view'), async (_req, res, next) => {
+  try {
+    const devices = await prisma.device.findMany({
+      where: { deletedAt: null },
+      select: {
+        purchasePrice: true,
+        purchaseDate: true,
+        category: { select: { id: true, name: true, usefulLifeYears: true } },
+      },
+    });
+
+    let totalPurchase = 0;
+    let totalBookValue = 0;
+    const byCategory: Record<string, { name: string; purchase: number; bookValue: number; count: number }> = {};
+
+    for (const d of devices) {
+      const price = d.purchasePrice != null ? Number(d.purchasePrice) : 0;
+      const dep = computeDepreciation(
+        d.purchasePrice != null ? Number(d.purchasePrice) : null,
+        d.purchaseDate,
+        d.category?.usefulLifeYears
+      );
+      const book = dep.bookValue ?? 0;
+      totalPurchase += price;
+      totalBookValue += book;
+      const key = d.category?.id ?? 'none';
+      const name = d.category?.name ?? 'Sin categoría';
+      byCategory[key] = byCategory[key] || { name, purchase: 0, bookValue: 0, count: 0 };
+      byCategory[key].purchase += price;
+      byCategory[key].bookValue += book;
+      byCategory[key].count += 1;
+    }
+
+    res.json({
+      currency: 'COP',
+      deviceCount: devices.length,
+      totalPurchase: Math.round(totalPurchase * 100) / 100,
+      totalBookValue: Math.round(totalBookValue * 100) / 100,
+      totalDepreciation: Math.round((totalPurchase - totalBookValue) * 100) / 100,
+      byCategory: Object.values(byCategory)
+        .map((c) => ({ ...c, purchase: Math.round(c.purchase * 100) / 100, bookValue: Math.round(c.bookValue * 100) / 100 }))
+        .sort((a, b) => b.purchase - a.purchase),
+    });
   } catch (e) {
     next(e);
   }

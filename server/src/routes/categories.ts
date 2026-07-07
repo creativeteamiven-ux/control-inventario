@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { createCategorySchema, updateCategorySchema } from '@soundvault/shared';
 import { AppError } from '../middleware/errorHandler.js';
+import { writeAudit } from '../lib/audit.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -55,18 +56,19 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-router.post('/', requireRole('ADMIN', 'MANAGER'), async (req, res, next) => {
+router.post('/', requirePermission('categories.edit'), async (req: AuthRequest, res, next) => {
   try {
     const parsed = createCategorySchema.safeParse(req.body);
     if (!parsed.success) throw new AppError(400, parsed.error.errors[0]?.message || 'Datos inválidos');
     const category = await prisma.category.create({ data: parsed.data });
+    await writeAudit(req, 'Category', category.id, 'CREATE', { name: category.name });
     res.status(201).json(category);
   } catch (e) {
     next(e);
   }
 });
 
-router.patch('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res, next) => {
+router.patch('/:id', requirePermission('categories.edit'), async (req: AuthRequest, res, next) => {
   try {
     const parsed = updateCategorySchema.safeParse(req.body);
     if (!parsed.success) throw new AppError(400, parsed.error.errors[0]?.message || 'Datos inválidos');
@@ -74,15 +76,17 @@ router.patch('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res, next) => 
       where: { id: req.params.id },
       data: parsed.data,
     });
+    await writeAudit(req, 'Category', category.id, 'UPDATE', parsed.data);
     res.json(category);
   } catch (e) {
     next(e);
   }
 });
 
-router.delete('/:id', requireRole('ADMIN'), async (req, res, next) => {
+router.delete('/:id', requirePermission('categories.edit'), async (req: AuthRequest, res, next) => {
   try {
     await prisma.category.delete({ where: { id: req.params.id } });
+    await writeAudit(req, 'Category', req.params.id, 'DELETE');
     res.status(204).send();
   } catch (e) {
     next(e);

@@ -2,8 +2,9 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { createMaintenanceSchema, updateMaintenanceSchema } from '@soundvault/shared';
 import { AppError } from '../middleware/errorHandler.js';
-import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
+import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { stripCostFromResponse } from '../lib/permissions.js';
+import { writeAudit } from '../lib/audit.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -65,7 +66,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-router.post('/', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), async (req: AuthRequest, res, next) => {
+router.post('/', requirePermission('maintenance.create'), async (req: AuthRequest, res, next) => {
   try {
     const parsed = createMaintenanceSchema.safeParse(req.body);
     if (!parsed.success) throw new AppError(400, parsed.error.errors[0]?.message || 'Datos inválidos');
@@ -79,13 +80,14 @@ router.post('/', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), async (req: Auth
       data: data as Parameters<typeof prisma.maintenance.create>[0]['data'],
       include: { device: true },
     });
+    await writeAudit(req, 'Maintenance', item.id, 'CREATE', { deviceId: item.deviceId, type: item.type });
     res.status(201).json(item);
   } catch (e) {
     next(e);
   }
 });
 
-router.patch('/:id', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), async (req, res, next) => {
+router.patch('/:id', requirePermission('maintenance.create'), async (req: AuthRequest, res, next) => {
   try {
     const parsed = updateMaintenanceSchema.safeParse(req.body);
     if (!parsed.success) throw new AppError(400, parsed.error.errors[0]?.message || 'Datos inválidos');
@@ -97,15 +99,17 @@ router.patch('/:id', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), async (req, 
       data: update as Parameters<typeof prisma.maintenance.update>[0]['data'],
       include: { device: true },
     });
+    await writeAudit(req, 'Maintenance', item.id, 'UPDATE', parsed.data);
     res.json(item);
   } catch (e) {
     next(e);
   }
 });
 
-router.delete('/:id', requireRole('ADMIN'), async (req, res, next) => {
+router.delete('/:id', requirePermission('maintenance.delete'), async (req: AuthRequest, res, next) => {
   try {
     await prisma.maintenance.delete({ where: { id: req.params.id } });
+    await writeAudit(req, 'Maintenance', req.params.id, 'DELETE');
     res.status(204).send();
   } catch (e) {
     next(e);

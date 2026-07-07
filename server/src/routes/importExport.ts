@@ -6,7 +6,7 @@ import multer from 'multer';
 import * as XLSX from 'xlsx';
 import { PrismaClient } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler.js';
-import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
+import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -167,7 +167,7 @@ function validateDeviceRows(
 }
 
 // Validar archivo de equipos (sin importar)
-router.post('/devices/validate', requireRole('ADMIN', 'MANAGER'), upload.single('file'), async (req: AuthRequest, res, next) => {
+router.post('/devices/validate', requirePermission('inventory.export'), upload.single('file'), async (req: AuthRequest, res, next) => {
   try {
     const file = req.file;
     if (!file) throw new AppError(400, 'No se envió archivo Excel');
@@ -210,7 +210,7 @@ router.post('/devices/validate', requireRole('ADMIN', 'MANAGER'), upload.single(
 });
 
 // Importar equipos desde Excel
-router.post('/devices', requireRole('ADMIN', 'MANAGER'), upload.single('file'), async (req: AuthRequest, res, next) => {
+router.post('/devices', requirePermission('inventory.export'), upload.single('file'), async (req: AuthRequest, res, next) => {
   try {
     const file = req.file;
     if (!file) throw new AppError(400, 'No se envi? archivo Excel');
@@ -378,7 +378,7 @@ function validateMovementRows(
   return result;
 }
 
-router.post('/movements/validate', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), upload.single('file'), async (req: AuthRequest, res, next) => {
+router.post('/movements/validate', requirePermission('movements.create'), upload.single('file'), async (req: AuthRequest, res, next) => {
   try {
     const file = req.file;
     if (!file) throw new AppError(400, 'No se envió archivo Excel');
@@ -412,7 +412,7 @@ router.post('/movements/validate', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN')
 });
 
 // Importar traslados desde Excel
-router.post('/movements', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), upload.single('file'), async (req: AuthRequest, res, next) => {
+router.post('/movements', requirePermission('movements.create'), upload.single('file'), async (req: AuthRequest, res, next) => {
   try {
     const file = req.file;
     if (!file) throw new AppError(400, 'No se envió archivo Excel');
@@ -552,7 +552,7 @@ function validateMaintenanceRows(
   return result;
 }
 
-router.post('/maintenance/validate', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), upload.single('file'), async (req: AuthRequest, res, next) => {
+router.post('/maintenance/validate', requirePermission('maintenance.create'), upload.single('file'), async (req: AuthRequest, res, next) => {
   try {
     const file = req.file;
     if (!file) throw new AppError(400, 'No se envió archivo Excel');
@@ -586,7 +586,7 @@ router.post('/maintenance/validate', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN
 });
 
 // Importar equipos a mantenimiento: Excel con Codigo_Equipo, Descripcion, Tipo, Fecha_inicio
-router.post('/maintenance', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), upload.single('file'), async (req: AuthRequest, res, next) => {
+router.post('/maintenance', requirePermission('maintenance.create'), upload.single('file'), async (req: AuthRequest, res, next) => {
   try {
     const file = req.file;
     if (!file) throw new AppError(400, 'No se envió archivo Excel');
@@ -717,7 +717,7 @@ function validateMaintenanceUpdateRows(
   return result;
 }
 
-router.post('/maintenance-update/validate', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), upload.single('file'), async (req: AuthRequest, res, next) => {
+router.post('/maintenance-update/validate', requirePermission('maintenance.create'), upload.single('file'), async (req: AuthRequest, res, next) => {
   try {
     const file = req.file;
     if (!file) throw new AppError(400, 'No se envió archivo Excel');
@@ -750,7 +750,7 @@ router.post('/maintenance-update/validate', requireRole('ADMIN', 'MANAGER', 'TEC
 
 // Cargar datos de mantenimiento de forma masiva (actualizar registros existentes)
 // Excel con Id_Mantenimiento y columnas: Tipo, Descripcion, Fecha_inicio, Estado, Costo, Tecnico, Fecha_fin, Notas
-router.post('/maintenance-update', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), upload.single('file'), async (req: AuthRequest, res, next) => {
+router.post('/maintenance-update', requirePermission('maintenance.create'), upload.single('file'), async (req: AuthRequest, res, next) => {
   try {
     const file = req.file;
     if (!file) throw new AppError(400, 'No se envió archivo Excel');

@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { createLoanSchema, returnLoanSchema } from '@soundvault/shared';
 import { AppError } from '../middleware/errorHandler.js';
-import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
+import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
+import { writeAudit } from '../lib/audit.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -40,7 +41,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-router.post('/', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), async (req: AuthRequest, res, next) => {
+router.post('/', requirePermission('loans.create'), async (req: AuthRequest, res, next) => {
   try {
     const parsed = createLoanSchema.safeParse(req.body);
     if (!parsed.success) throw new AppError(400, parsed.error.errors[0]?.message || 'Datos inválidos');
@@ -66,13 +67,14 @@ router.post('/', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), async (req: Auth
       });
       return loan;
     });
+    await writeAudit(req, 'LoanRecord', item.id, 'CREATE', { deviceId: item.deviceId, borrowerName: item.borrowerName });
     res.status(201).json(item);
   } catch (e) {
     next(e);
   }
 });
 
-router.post('/:id/return', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), async (req, res, next) => {
+router.post('/:id/return', requirePermission('loans.create'), async (req: AuthRequest, res, next) => {
   try {
     const parsed = returnLoanSchema.safeParse(req.body);
     const returnDate = parsed.success && parsed.data.returnDate
@@ -98,6 +100,7 @@ router.post('/:id/return', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), async 
       where: { id: req.params.id },
       include: { device: true },
     });
+    await writeAudit(req, 'LoanRecord', loan.id, 'RETURN', { returnDate });
     res.json(updated);
   } catch (e) {
     next(e);

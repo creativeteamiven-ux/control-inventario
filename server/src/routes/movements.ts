@@ -3,7 +3,8 @@ import { PrismaClient } from '@prisma/client';
 import { createMovementSchema } from '@soundvault/shared';
 import type { DeviceLocation, MovementType } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler.js';
-import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
+import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
+import { writeAudit } from '../lib/audit.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -13,7 +14,7 @@ router.use(authenticate);
 type MovementPayload = { deviceId: string; type: string; reason: string; fromLocation?: string; toLocation?: string };
 
 /** Crear uno o más movimientos desde la página (sin importar Excel) */
-router.post('/', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), async (req: AuthRequest, res, next) => {
+router.post('/', requirePermission('movements.create'), async (req: AuthRequest, res, next) => {
   try {
     const body = req.body as { movements?: MovementPayload[] } | MovementPayload;
     const list: MovementPayload[] = Array.isArray((body as { movements?: MovementPayload[] }).movements)
@@ -62,6 +63,7 @@ router.post('/', requireRole('ADMIN', 'MANAGER', 'TECHNICIAN'), async (req: Auth
       }
     }
 
+    if (results.created > 0) await writeAudit(req, 'Movement', 'batch', 'CREATE', { created: results.created });
     res.status(201).json(results);
   } catch (e) {
     next(e);

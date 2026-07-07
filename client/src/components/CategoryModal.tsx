@@ -49,6 +49,7 @@ interface Category {
   icon?: string;
   color: string;
   parentId?: string | null;
+  usefulLifeYears?: number | null;
 }
 
 interface CategoryModalProps {
@@ -65,6 +66,7 @@ export default function CategoryModal({ open, onOpenChange, category }: Category
     slug: '',
     icon: 'folder-tree',
     color: '#3B82F6',
+    usefulLifeYears: '',
   });
 
   const isEdit = !!category;
@@ -76,6 +78,7 @@ export default function CategoryModal({ open, onOpenChange, category }: Category
         slug: category.slug,
         icon: category.icon || 'folder-tree',
         color: category.color || '#3B82F6',
+        usefulLifeYears: category.usefulLifeYears != null ? String(category.usefulLifeYears) : '',
       });
     } else {
       setForm({
@@ -83,6 +86,7 @@ export default function CategoryModal({ open, onOpenChange, category }: Category
         slug: '',
         icon: 'folder-tree',
         color: '#3B82F6',
+        usefulLifeYears: '',
       });
     }
   }, [category, open]);
@@ -106,6 +110,12 @@ export default function CategoryModal({ open, onOpenChange, category }: Category
       toast.error('El slug debe contener solo letras minúsculas, números y guiones');
       return;
     }
+    const lifeRaw = form.usefulLifeYears.trim();
+    const usefulLifeYears = lifeRaw === '' ? null : Number(lifeRaw);
+    if (usefulLifeYears != null && (!Number.isInteger(usefulLifeYears) || usefulLifeYears <= 0)) {
+      toast.error('La vida útil debe ser un número entero de años mayor a 0');
+      return;
+    }
     setSubmitting(true);
     try {
       if (isEdit && category) {
@@ -114,6 +124,7 @@ export default function CategoryModal({ open, onOpenChange, category }: Category
           slug,
           icon: form.icon,
           color: form.color,
+          usefulLifeYears,
         });
         toast.success('Categoría actualizada');
       } else {
@@ -122,6 +133,7 @@ export default function CategoryModal({ open, onOpenChange, category }: Category
           slug,
           icon: form.icon,
           color: form.color,
+          usefulLifeYears,
         });
         toast.success('Categoría creada');
       }
@@ -157,6 +169,17 @@ export default function CategoryModal({ open, onOpenChange, category }: Category
               value={form.slug}
               onChange={(e) => setForm({ ...form, slug: e.target.value })}
               placeholder="sistema-pa (se genera del nombre)"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Vida útil (años)</label>
+            <Input
+              type="number"
+              min="1"
+              step="1"
+              value={form.usefulLifeYears}
+              onChange={(e) => setForm({ ...form, usefulLifeYears: e.target.value })}
+              placeholder="Ej: 5 (para depreciación). Vacío = usar 5 por defecto"
             />
           </div>
           <div>

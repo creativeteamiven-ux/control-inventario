@@ -5,6 +5,8 @@
 import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -23,6 +25,9 @@ import importExportRouter from './routes/importExport.js';
 import dashboardRouter from './routes/dashboard.js';
 import usersRouter from './routes/users.js';
 import locationsRouter from './routes/locations.js';
+import expensesRouter from './routes/expenses.js';
+import budgetsRouter from './routes/budgets.js';
+import alertsRouter from './routes/alerts.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -35,8 +40,45 @@ dotenv.config({ path: path.join(envDir, '.env.local') });
 const nodeEnv = process.env.NODE_ENV || 'development';
 dotenv.config({ path: path.join(envDir, `.env.${nodeEnv}`) });
 
+// Seguridad: en producción NO permitimos arrancar con secrets por defecto/ausentes.
+const isProduction = nodeEnv === 'production' || !!process.env.RENDER || !!process.env.VERCEL;
+if (isProduction) {
+  const missing = ['JWT_SECRET', 'REFRESH_SECRET'].filter((k) => !process.env[k] || process.env[k]!.length < 16);
+  if (missing.length) {
+    console.error(
+      `[Seguridad] Falta(n) variable(s) de entorno obligatoria(s) o son demasiado cortas: ${missing.join(', ')}. ` +
+        'Define secrets largos y aleatorios en el entorno de producción.'
+    );
+    throw new Error('Secrets de producción no configurados correctamente');
+  }
+}
+
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
+
+// Cabeceras de seguridad. Como es una API separada del frontend, deshabilitamos CSP
+// (devuelve JSON) y permitimos que /uploads se consuma de otro origen.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
+
+// Límite de peticiones general (anti-abuso) y uno más estricto para autenticación (anti fuerza bruta).
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.' },
+});
 
 // CORS: permitir CLIENT_URL (puede ser varias separadas por coma) y previews de Vercel del frontend
 const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
@@ -112,7 +154,13 @@ app.get('/', (_req, res) => {
   });
 });
 
+// Detrás de proxy (Render/Vercel) para que el rate-limit identifique bien la IP del cliente.
+app.set('trust proxy', 1);
+
 // Rutas API
+app.use('/api', generalLimiter);
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/refresh', authLimiter);
 app.use('/api/auth', authRouter);
 app.use('/api/devices', devicesRouter);
 app.use('/api/categories', categoriesRouter);
@@ -126,6 +174,9 @@ app.use('/api/import', importExportRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/locations', locationsRouter);
+app.use('/api/expenses', expensesRouter);
+app.use('/api/budgets', budgetsRouter);
+app.use('/api/alerts', alertsRouter);
 
 // Archivos estáticos (uploads)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

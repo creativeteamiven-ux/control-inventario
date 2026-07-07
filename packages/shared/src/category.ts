@@ -6,6 +6,7 @@ export const createCategorySchema = z.object({
   icon: z.string().min(1, 'Ícono requerido'),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Color hex inválido'),
   parentId: z.string().optional(),
+  usefulLifeYears: z.number().int().positive().max(100).optional().nullable(),
 });
 
 export const updateCategorySchema = createCategorySchema.partial();

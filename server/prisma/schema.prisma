@@ -1,4 +1,4 @@
-// SoundVault - Sistema de Gestión de Inventario de Audio
+// The Warehouse - Sistema de Gestión de Inventario de Audio
 // Schema Prisma para Iglesia & Estudio de Grabación
 
 generator client {
@@ -52,6 +52,16 @@ enum UserRole {
   VIEWER
 }
 
+enum ExpenseCategory {
+  PURCHASE       // Compra de equipo
+  REPAIR         // Reparación
+  MAINTENANCE    // Mantenimiento / servicio técnico
+  ACCESSORY      // Accesorios / consumibles
+  RENTAL         // Alquiler
+  SERVICE        // Servicios (software, suscripciones)
+  OTHER          // Otro
+}
+
 model User {
   id           String    @id @default(cuid())
   name         String
@@ -69,16 +79,17 @@ model User {
 }
 
 model Category {
-  id        String     @id @default(cuid())
-  name      String
-  slug      String     @unique
-  icon      String
-  color     String
-  parentId  String?
-  parent    Category?  @relation("CategoryTree", fields: [parentId], references: [id])
-  children  Category[] @relation("CategoryTree")
-  devices   Device[]
-  createdAt DateTime   @default(now())
+  id              String     @id @default(cuid())
+  name            String
+  slug            String     @unique
+  icon            String
+  color           String
+  parentId        String?
+  parent          Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children        Category[] @relation("CategoryTree")
+  devices         Device[]
+  usefulLifeYears Int?       // Vida útil en años (para depreciación lineal)
+  createdAt       DateTime   @default(now())
 }
 
 model Tag {
@@ -127,6 +138,7 @@ model Device {
   movements      Movement[]
   maintenances   Maintenance[]
   loanRecords    LoanRecord[]
+  expenses       Expense[]
   tags           Tag[]
 }
 
@@ -195,6 +207,44 @@ model LoanRecord {
   approvedByUser  User      @relation("ApprovedBy", fields: [approvedBy], references: [id])
   notes           String?   @db.Text
   createdAt       DateTime  @default(now())
+}
+
+// Gastos: contabilidad de inventario (compras, reparaciones, servicios, etc.)
+model Expense {
+  id            String          @id @default(cuid())
+  date          DateTime
+  amount        Decimal         @db.Decimal(14, 2)
+  currency      String          @default("COP") // COP, USD
+  category      ExpenseCategory @default(OTHER)
+  description   String          @db.Text
+  supplier      String?
+  invoiceNumber String?
+  paymentMethod String?
+  deviceId      String?
+  device        Device?         @relation(fields: [deviceId], references: [id])
+  receiptUrl    String?         // Comprobante adjunto (imagen o PDF)
+  userId        String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([date])
+  @@index([category])
+  @@index([deviceId])
+}
+
+// Presupuestos por período (mensual o anual) y categoría de gasto opcional.
+model Budget {
+  id        String           @id @default(cuid())
+  year      Int
+  month     Int?             // null = presupuesto anual; 1-12 = mensual
+  category  ExpenseCategory? // null = todas las categorías
+  amount    Decimal          @db.Decimal(14, 2)
+  currency  String           @default("COP")
+  note      String?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([year, month])
 }
 
 // Audit trail - log de TODOS los cambios
