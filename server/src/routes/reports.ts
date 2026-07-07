@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import PDFDocument from 'pdfkit';
+import * as XLSX from 'xlsx';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { stripCostFromResponse } from '../lib/permissions.js';
 import { computeDepreciation } from '../lib/depreciation.js';
@@ -9,6 +10,186 @@ const router = Router();
 const prisma = new PrismaClient();
 
 router.use(authenticate);
+
+const MOVEMENT_TYPE_LABELS: Record<string, string> = {
+  CHECK_IN: 'Entrada',
+  CHECK_OUT: 'Salida',
+  TRANSFER: 'Traslado',
+  STATUS_CHANGE: 'Cambio de estado',
+};
+
+const LOCATION_LABELS: Record<string, string> = {
+  MAIN_AUDITORIUM: 'Auditorio principal',
+  RECORDING_STUDIO: 'Estudio de grabación',
+  STORAGE_ROOM: 'Cuarto de almacenamiento',
+  YOUTH_ROOM: 'Salón de jóvenes',
+  CHAPEL: 'Capilla',
+  ON_LOAN: 'En préstamo',
+};
+
+const locLabel = (v?: string | null) => (v ? LOCATION_LABELS[v] ?? String(v).replace(/_/g, ' ') : '—');
+const typeLabel = (v: string) => MOVEMENT_TYPE_LABELS[v] ?? v;
+
+/** Construye un rango de fechas (createdAt) a partir de from/to (YYYY-MM-DD). */
+function buildDateRange(from?: string, to?: string): { gte?: Date; lte?: Date } | undefined {
+  const range: { gte?: Date; lte?: Date } = {};
+  if (from) {
+    const start = new Date(from);
+    if (!isNaN(start.getTime())) range.gte = start;
+  }
+  if (to) {
+    const end = new Date(to);
+    if (!isNaN(end.getTime())) {
+      end.setHours(23, 59, 59, 999);
+      range.lte = end;
+    }
+  }
+  return Object.keys(range).length ? range : undefined;
+}
+
+/** Filtros comunes para el reporte de movimientos. */
+function buildMovementWhere(query: Record<string, unknown>) {
+  const where: Record<string, unknown> = {};
+  const from = query.from as string | undefined;
+  const to = query.to as string | undefined;
+  const type = query.type as string | undefined;
+  const userId = query.userId as string | undefined;
+  const deviceId = query.deviceId as string | undefined;
+  const range = buildDateRange(from, to);
+  if (range) where.createdAt = range;
+  if (type) where.type = type;
+  if (userId) where.userId = userId;
+  if (deviceId) where.deviceId = deviceId;
+  return where;
+}
+
+const fmtDateTime = (d: Date) =>
+  new Date(d).toLocaleString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+// Historial de movimientos en Excel, con filtro por rango de fechas y tipo.
+router.get('/movements/export', requirePermission('reports.export'), async (req, res, next) => {
+  try {
+    const where = buildMovementWhere(req.query as Record<string, unknown>);
+    const movements = await prisma.movement.findMany({
+      where,
+      include: {
+        device: { select: { internalCode: true, name: true, brand: true, model: true } },
+        user: { select: { name: true, email: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const rows = movements.map((m) => ({
+      Fecha: fmtDateTime(m.createdAt),
+      Código: m.device?.internalCode ?? '',
+      Equipo: m.device?.name ?? '',
+      'Marca/Modelo': [m.device?.brand, m.device?.model].filter(Boolean).join(' '),
+      Tipo: typeLabel(m.type),
+      Desde: locLabel(m.fromLocation),
+      Hacia: locLabel(m.toLocation),
+      'Razón/Motivo': m.reason,
+      'Realizado por': m.user?.name ?? '',
+      'Correo': m.user?.email ?? '',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ Fecha: '', Código: '', Equipo: '', 'Marca/Modelo': '', Tipo: '', Desde: '', Hacia: '', 'Razón/Motivo': '', 'Realizado por': '', 'Correo': '' }]);
+    ws['!cols'] = [{ wch: 18 }, { wch: 12 }, { wch: 26 }, { wch: 24 }, { wch: 16 }, { wch: 20 }, { wch: 20 }, { wch: 30 }, { wch: 22 }, { wch: 26 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Movimientos');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=historial-movimientos-thewarehouse.xlsx');
+    res.send(buf);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Reporte informativo de movimientos en PDF, con filtro por rango de fechas.
+router.get('/movements/pdf', requirePermission('reports.export'), async (req, res, next) => {
+  try {
+    const where = buildMovementWhere(req.query as Record<string, unknown>);
+    const from = req.query.from as string | undefined;
+    const to = req.query.to as string | undefined;
+    const movements = await prisma.movement.findMany({
+      where,
+      include: {
+        device: { select: { internalCode: true, name: true } },
+        user: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const doc = new PDFDocument({ size: 'A4', margin: 40, layout: 'landscape' });
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    const pdfPromise = new Promise<Buffer>((resolve, reject) => {
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+    });
+
+    doc.fontSize(18).fillColor('#1E3A5F').text('The Warehouse - Reporte de Movimientos', { align: 'center' });
+    doc.moveDown(0.3);
+    const rango = from || to ? `Periodo: ${from || '—'} a ${to || '—'}` : 'Periodo: todos los registros';
+    doc.fontSize(10).fillColor('#666').text(rango, { align: 'center' });
+    doc.fontSize(9).fillColor('#999').text(`Generado: ${new Date().toLocaleString('es-CO')}`, { align: 'center' });
+    doc.moveDown(1.5);
+
+    const colWidths = [95, 60, 130, 90, 90, 120, 110];
+    const headers = ['Fecha', 'Código', 'Equipo', 'Tipo', 'Desde', 'Hacia', 'Realizado por'];
+    const tableWidth = colWidths.reduce((a, b) => a + b, 0);
+    let y = doc.y;
+
+    const drawHeader = () => {
+      doc.rect(40, y, tableWidth, 22).fill('#1E3A5F');
+      doc.fillColor('#fff').fontSize(9);
+      let x = 45;
+      headers.forEach((h, i) => {
+        doc.text(h, x, y + 6, { width: colWidths[i] - 6, align: 'left' });
+        x += colWidths[i];
+      });
+      y += 24;
+      doc.fillColor('#333');
+    };
+
+    drawHeader();
+    movements.forEach((m, idx) => {
+      if (y > 520) {
+        doc.addPage();
+        y = 40;
+        drawHeader();
+      }
+      if (idx % 2 === 1) doc.rect(40, y, tableWidth, 18).fill('#f5f5f5');
+      const row = [
+        fmtDateTime(m.createdAt),
+        m.device?.internalCode ?? '',
+        m.device?.name ?? '',
+        typeLabel(m.type),
+        locLabel(m.fromLocation),
+        locLabel(m.toLocation),
+        m.user?.name ?? '',
+      ];
+      let x = 45;
+      doc.fillColor('#333').fontSize(8);
+      row.forEach((val, i) => {
+        doc.text(String(val).slice(0, 40), x, y + 4, { width: colWidths[i] - 6 });
+        x += colWidths[i];
+      });
+      y += 20;
+    });
+
+    doc.moveDown(2);
+    doc.fontSize(10).fillColor('#666').text(`Total de movimientos: ${movements.length} | The Warehouse`, 40, doc.y, { align: 'center', width: tableWidth });
+
+    doc.end();
+    const pdf = await pdfPromise;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=reporte-movimientos-thewarehouse.pdf');
+    res.send(pdf);
+  } catch (e) {
+    next(e);
+  }
+});
 
 router.get('/inventory', requirePermission('reports.view'), async (req, res, next) => {
   try {
