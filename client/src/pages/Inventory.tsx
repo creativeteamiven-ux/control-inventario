@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Package, Grid3X3, List, Plus, Search, Download, Upload, Truck, FolderTree, AlertCircle, CheckCircle, XCircle, MapPin, SlidersHorizontal } from 'lucide-react';
+import { Package, Grid3X3, List, Plus, Search, Download, Upload, Truck, FolderTree, AlertCircle, CheckCircle, XCircle, MapPin, SlidersHorizontal, QrCode } from 'lucide-react';
 import { addToStoredCart, addManyToStoredCart, getStoredCart } from '@/lib/transferCart';
 import { api } from '@/lib/api';
 import AddDeviceModal from '@/components/AddDeviceModal';
@@ -81,6 +81,28 @@ export default function Inventory() {
   }
   const categoriesFlat = Array.isArray(categoriesData) ? flattenCategories(categoriesData) : [];
   const totalDevicesInCategories = categoriesFlat.reduce((s, c) => s + c.count, 0);
+
+  const downloadLabels = async (useSelection: boolean) => {
+    try {
+      const params = useSelection && selectedIds.size > 0 ? { ids: Array.from(selectedIds).join(',') } : {};
+      const { data } = await api.get('/api/devices/labels', { params, responseType: 'blob' });
+      const blob = data as Blob;
+      if (blob.type?.includes('application/json')) {
+        const json = JSON.parse(await blob.text());
+        throw new Error(json.error || 'Error del servidor');
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'etiquetas-qr-thewarehouse.pdf';
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Etiquetas QR generadas');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al generar etiquetas';
+      toast.error(msg);
+    }
+  };
 
   const downloadTemplate = async () => {
     try {
@@ -473,6 +495,10 @@ export default function Inventory() {
             <Download className="h-4 w-4 mr-2" />
             Plantilla
           </Button>
+          <Button variant="outline" onClick={() => downloadLabels(false)} title="Genera una hoja PDF con las etiquetas QR de todos los equipos">
+            <QrCode className="h-4 w-4 mr-2" />
+            Etiquetas QR
+          </Button>
           <div className="relative">
             <input
               ref={fileInputRef}
@@ -507,6 +533,10 @@ export default function Inventory() {
           <Button variant="outline" size="sm" onClick={downloadMaintenanceTemplate}>
             <Download className="h-4 w-4 mr-2" />
             Plantilla mantenimiento
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => downloadLabels(true)}>
+            <QrCode className="h-4 w-4 mr-2" />
+            Etiquetas QR
           </Button>
           <Button variant="ghost" size="sm" onClick={clearSelection}>
             Limpiar selección

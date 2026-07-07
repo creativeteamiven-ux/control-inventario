@@ -71,6 +71,15 @@ export default function Dashboard() {
     refetchInterval: 30000,
   });
 
+  const { data: alertsData } = useQuery({
+    queryKey: ['alerts'],
+    queryFn: async () => {
+      const { data } = await api.get('/api/alerts');
+      return data;
+    },
+    refetchInterval: 60000,
+  });
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -103,6 +112,18 @@ export default function Dashboard() {
     count: s.count,
     fill: STATUS_COLORS[s.status] || '#64748B',
   }));
+
+  const locationData = (data?.byLocation ?? []).map((l: { name: string; count: number }) => ({
+    name: l.name,
+    count: l.count,
+  }));
+
+  const alerts: { id?: string; severity: string; title: string; message: string }[] = alertsData?.alerts ?? [];
+  const ALERT_STYLE: Record<string, string> = {
+    critical: 'border-red-500/30 bg-red-500/10 text-red-500',
+    warning: 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    info: 'border-blue-500/30 bg-blue-500/10 text-blue-500',
+  };
 
   return (
     <motion.div
@@ -223,6 +244,31 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+        <div className="bg-card rounded-xl border border-border p-4 md:p-6 min-w-0">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-display font-semibold text-lg">Equipos por lugar</h2>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="min-h-touch min-w-touch md:min-h-0 md:min-w-0 text-muted hover:text-foreground"
+              onClick={() => toggle('location')}
+              title={visible.location !== false ? 'Ocultar gráfica' : 'Mostrar gráfica'}
+            >
+              {visible.location !== false ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+            </Button>
+          </div>
+          {visible.location !== false && (
+            <div className="h-56 sm:h-64 overflow-x-auto">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={locationData} layout="vertical" margin={{ left: 80 }}>
+                  <XAxis type="number" stroke="#64748B" tick={{ fontSize: 12 }} />
+                  <YAxis type="category" dataKey="name" stroke="#64748B" width={80} tick={{ fontSize: 11 }} />
+                  <Bar dataKey="count" radius={[0, 4, 4, 0]} fill="#F59E0B" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="bg-card rounded-xl border border-border p-4 md:p-6">
@@ -230,6 +276,9 @@ export default function Dashboard() {
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
             <h2 className="font-display font-semibold text-lg">Alertas activas</h2>
+            {alerts.length > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-500">{alerts.length}</span>
+            )}
           </div>
           <Button
             variant="ghost"
@@ -242,7 +291,21 @@ export default function Dashboard() {
           </Button>
         </div>
         {visible.alerts && (
-          <p className="text-muted text-sm">Las alertas de garantías próximas a vencer y préstamos vencidos se mostrarán aquí.</p>
+          alerts.length === 0 ? (
+            <p className="text-muted text-sm">No hay alertas activas. Todo en orden.</p>
+          ) : (
+            <div className="space-y-2 max-h-80 overflow-y-auto thin-scrollbar pr-1">
+              {alerts.slice(0, 30).map((a, i) => (
+                <div key={a.id ?? i} className={cn('flex items-start gap-3 rounded-lg border px-3 py-2', ALERT_STYLE[a.severity] ?? ALERT_STYLE.info)}>
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{a.title}</p>
+                    <p className="text-xs opacity-80 truncate">{a.message}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
         )}
       </div>
     </motion.div>

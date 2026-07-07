@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import QRCode from 'qrcode';
+import PDFDocument from 'pdfkit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { PrismaClient } from '@prisma/client';
@@ -114,6 +115,70 @@ router.get('/lookup', async (req, res, next) => {
     if (!device) throw new AppError(404, 'No se encontró ningún equipo con ese código');
     const perms = (req as AuthRequest).user?.permissions ?? [];
     res.json(stripCostFromResponse(device, perms));
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Hoja de etiquetas QR para imprimir (varios equipos). ?ids=a,b,c  (si no se pasan ids, usa todos).
+router.get('/labels', async (req, res, next) => {
+  try {
+    const idsParam = (req.query.ids as string | undefined)?.split(',').map((s) => s.trim()).filter(Boolean);
+    const where: Record<string, unknown> = { deletedAt: null };
+    if (idsParam?.length) where.id = { in: idsParam };
+    const devices = await prisma.device.findMany({
+      where,
+      select: { id: true, internalCode: true, name: true, brand: true },
+      orderBy: { internalCode: 'asc' },
+      take: 500,
+    });
+    if (devices.length === 0) throw new AppError(404, 'No hay equipos para generar etiquetas');
+    const base = BASE_URL.split(',')[0].trim();
+
+    const doc = new PDFDocument({ size: 'A4', margin: 28 });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c: Buffer) => chunks.push(c));
+    const pdfPromise = new Promise<Buffer>((resolve, reject) => {
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+    });
+
+    // Rejilla 2 columnas x 5 filas (10 etiquetas por página).
+    const cols = 2;
+    const rows = 5;
+    const pageW = doc.page.width - 56;
+    const cellW = pageW / cols;
+    const cellH = (doc.page.height - 56) / rows;
+    const qrSize = 90;
+
+    let i = 0;
+    for (const d of devices) {
+      const posInPage = i % (cols * rows);
+      if (i > 0 && posInPage === 0) doc.addPage();
+      const col = posInPage % cols;
+      const row = Math.floor(posInPage / cols);
+      const x = 28 + col * cellW;
+      const y = 28 + row * cellH;
+
+      doc.roundedRect(x + 4, y + 4, cellW - 8, cellH - 8, 6).strokeColor('#e2e8f0').lineWidth(1).stroke();
+
+      const qrBuf = await QRCode.toBuffer(`${base}/device/${d.id}`, { width: 240, margin: 1 });
+      doc.image(qrBuf, x + 14, y + 16, { width: qrSize, height: qrSize });
+
+      const textX = x + 14 + qrSize + 12;
+      const textW = cellW - (qrSize + 40);
+      doc.fillColor('#0f172a').fontSize(13).font('Helvetica-Bold').text(d.internalCode, textX, y + 22, { width: textW });
+      doc.fillColor('#334155').fontSize(10).font('Helvetica').text(String(d.name).slice(0, 40), textX, y + 42, { width: textW });
+      if (d.brand) doc.fillColor('#64748b').fontSize(9).text(String(d.brand).slice(0, 30), textX, y + 60, { width: textW });
+      doc.fillColor('#94a3b8').fontSize(7).text('The Warehouse', textX, y + cellH - 26, { width: textW });
+      i++;
+    }
+
+    doc.end();
+    const pdf = await pdfPromise;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=etiquetas-qr-thewarehouse.pdf');
+    res.send(pdf);
   } catch (e) {
     next(e);
   }

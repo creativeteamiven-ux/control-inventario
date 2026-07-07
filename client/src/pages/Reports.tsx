@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
-import { FileBarChart, Download, FileSpreadsheet, FileText, History } from 'lucide-react';
+import { FileBarChart, FileSpreadsheet, FileText, History, Wrench, HandCoins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
@@ -33,8 +33,13 @@ async function downloadBlob(url: string, params: Record<string, string>, filenam
 
 export default function Reports() {
   const [downloading, setDownloading] = useState(false);
+  const [invExcelBusy, setInvExcelBusy] = useState(false);
   const [movBusy, setMovBusy] = useState<'excel' | 'pdf' | null>(null);
   const [movFilters, setMovFilters] = useState({ from: '', to: '', type: '', userId: '' });
+  const [maintFilters, setMaintFilters] = useState({ from: '', to: '' });
+  const [loanFilters, setLoanFilters] = useState({ from: '', to: '' });
+  const [maintBusy, setMaintBusy] = useState(false);
+  const [loanBusy, setLoanBusy] = useState(false);
 
   // Lista de usuarios para filtrar por responsable (best-effort; si no hay permiso, se omite).
   const { data: usersData } = useQuery({
@@ -61,6 +66,44 @@ export default function Reports() {
       toast.error(msg);
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const downloadInventoryExcel = async () => {
+    setInvExcelBusy(true);
+    try {
+      await downloadBlob('/api/reports/inventory/export', {}, 'inventario-thewarehouse.xlsx');
+      toast.success('Excel descargado');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Error al descargar el Excel');
+    } finally {
+      setInvExcelBusy(false);
+    }
+  };
+
+  const downloadMaintenance = async () => {
+    setMaintBusy(true);
+    try {
+      const params = Object.fromEntries(Object.entries(maintFilters).filter(([, v]) => v));
+      await downloadBlob('/api/reports/maintenance/export', params, 'mantenimientos-thewarehouse.xlsx');
+      toast.success('Reporte descargado');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Error al descargar el reporte');
+    } finally {
+      setMaintBusy(false);
+    }
+  };
+
+  const downloadLoans = async () => {
+    setLoanBusy(true);
+    try {
+      const params = Object.fromEntries(Object.entries(loanFilters).filter(([, v]) => v));
+      await downloadBlob('/api/reports/loans/export', params, 'prestamos-thewarehouse.xlsx');
+      toast.success('Reporte descargado');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Error al descargar el reporte');
+    } finally {
+      setLoanBusy(false);
     }
   };
 
@@ -176,10 +219,54 @@ export default function Reports() {
             </div>
             <h2 className="font-display font-semibold">Inventario completo</h2>
           </div>
-          <p className="text-sm text-muted mb-4">Exporta el inventario completo en PDF con logo y fecha de generación.</p>
-          <Button onClick={downloadInventoryPdf} disabled={downloading}>
-            <Download className="h-4 w-4 mr-2" />
-            {downloading ? 'Generando...' : 'Descargar PDF'}
+          <p className="text-sm text-muted mb-4">Exporta el inventario completo en PDF o Excel con fecha de generación.</p>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={downloadInventoryPdf} disabled={downloading}>
+              <FileText className="h-4 w-4 mr-2" />
+              {downloading ? 'Generando...' : 'PDF'}
+            </Button>
+            <Button variant="outline" onClick={downloadInventoryExcel} disabled={invExcelBusy}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              {invExcelBusy ? 'Generando...' : 'Excel'}
+            </Button>
+          </div>
+        </div>
+
+        {/* Mantenimientos */}
+        <div className="bg-card rounded-xl border border-border p-6 hover:border-primary/50 transition-colors">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-3 rounded-lg bg-primary/20">
+              <Wrench className="h-6 w-6 text-primary" />
+            </div>
+            <h2 className="font-display font-semibold">Mantenimientos</h2>
+          </div>
+          <p className="text-sm text-muted mb-3">Historial de mantenimientos por rango de fechas (Excel).</p>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <Input type="date" value={maintFilters.from} onChange={(e) => setMaintFilters((f) => ({ ...f, from: e.target.value }))} />
+            <Input type="date" value={maintFilters.to} onChange={(e) => setMaintFilters((f) => ({ ...f, to: e.target.value }))} />
+          </div>
+          <Button variant="outline" onClick={downloadMaintenance} disabled={maintBusy}>
+            <FileSpreadsheet className="h-4 w-4 mr-2" />
+            {maintBusy ? 'Generando...' : 'Descargar Excel'}
+          </Button>
+        </div>
+
+        {/* Préstamos */}
+        <div className="bg-card rounded-xl border border-border p-6 hover:border-primary/50 transition-colors">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-3 rounded-lg bg-primary/20">
+              <HandCoins className="h-6 w-6 text-primary" />
+            </div>
+            <h2 className="font-display font-semibold">Préstamos</h2>
+          </div>
+          <p className="text-sm text-muted mb-3">Historial de préstamos por rango de fechas (Excel).</p>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <Input type="date" value={loanFilters.from} onChange={(e) => setLoanFilters((f) => ({ ...f, from: e.target.value }))} />
+            <Input type="date" value={loanFilters.to} onChange={(e) => setLoanFilters((f) => ({ ...f, to: e.target.value }))} />
+          </div>
+          <Button variant="outline" onClick={downloadLoans} disabled={loanBusy}>
+            <FileSpreadsheet className="h-4 w-4 mr-2" />
+            {loanBusy ? 'Generando...' : 'Descargar Excel'}
           </Button>
         </div>
       </div>

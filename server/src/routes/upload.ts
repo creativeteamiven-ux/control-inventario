@@ -91,6 +91,24 @@ router.post('/images', requirePermission('inventory.edit'), uploadImages.array('
   }
 });
 
+// Reordenar imágenes de un equipo (la primera es la principal). body: { deviceId, orderedIds: [] }
+router.patch('/images/reorder', requirePermission('inventory.edit'), async (req: AuthRequest, res, next) => {
+  try {
+    const { deviceId, orderedIds } = req.body as { deviceId?: string; orderedIds?: string[] };
+    if (!deviceId || !Array.isArray(orderedIds) || orderedIds.length === 0) {
+      throw new AppError(400, 'Falta deviceId u orderedIds');
+    }
+    await prisma.$transaction(
+      orderedIds.map((id, index) =>
+        prisma.deviceImage.updateMany({ where: { id, deviceId }, data: { order: index } })
+      )
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.delete('/images/:id', requirePermission('inventory.edit'), async (req: AuthRequest, res, next) => {
   try {
     const image = await prisma.deviceImage.findUnique({ where: { id: req.params.id } });

@@ -14,6 +14,7 @@ import {
   PiggyBank,
   Users,
   Settings,
+  ShieldCheck,
   ChevronLeft,
   ChevronRight,
   X,
@@ -23,7 +24,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { usePermissions } from '@/hooks/usePermissions';
 
-const navItems: { to: string; icon: typeof LayoutDashboard; label: string; perm?: string }[] = [
+const navItems: { to: string; icon: typeof LayoutDashboard; label: string; perm?: string; roles?: string[] }[] = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/inventory', icon: Package, label: 'Inventario' },
   { to: '/scan', icon: ScanLine, label: 'Escanear' },
@@ -35,6 +36,7 @@ const navItems: { to: string; icon: typeof LayoutDashboard; label: string; perm?
   { to: '/reports', icon: FileBarChart, label: 'Reportes' },
   { to: '/expenses', icon: Receipt, label: 'Gastos', perm: 'finance.view' },
   { to: '/budgets', icon: PiggyBank, label: 'Presupuestos', perm: 'finance.view' },
+  { to: '/audit', icon: ShieldCheck, label: 'Auditoría', roles: ['ADMIN', 'MANAGER'] },
   { to: '/users', icon: Users, label: 'Usuarios' },
   { to: '/settings', icon: Settings, label: 'Configuración' },
 ];
@@ -55,9 +57,11 @@ function NavContent({
   onItemClick?: () => void;
   showLogout?: boolean;
 }) {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const { hasPermission } = usePermissions();
-  const visibleItems = navItems.filter((item) => !item.perm || hasPermission(item.perm));
+  const visibleItems = navItems.filter(
+    (item) => (!item.perm || hasPermission(item.perm)) && (!item.roles || (user?.role ? item.roles.includes(user.role) : false))
+  );
   return (
     <>
       <nav className="flex-1 p-2 space-y-1 overflow-y-auto">

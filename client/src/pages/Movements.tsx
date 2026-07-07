@@ -151,10 +151,13 @@ export default function Movements() {
     }
   };
 
+  const [histFilters, setHistFilters] = useState({ from: '', to: '', type: '' });
+
   const { data, isLoading } = useQuery({
-    queryKey: ['movements'],
+    queryKey: ['movements', histFilters],
     queryFn: async () => {
-      const { data } = await api.get('/api/movements');
+      const params = Object.fromEntries(Object.entries(histFilters).filter(([, v]) => v));
+      const { data } = await api.get('/api/movements', { params });
       return data;
     },
   });
@@ -381,6 +384,38 @@ export default function Movements() {
           </div>
         </div>
       )}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:flex-wrap">
+        <h2 className="font-display font-semibold text-lg sm:mr-auto sm:self-center">Historial de movimientos</h2>
+        <div>
+          <label className="block text-xs font-medium text-muted mb-1">Desde</label>
+          <Input type="date" value={histFilters.from} onChange={(e) => setHistFilters((f) => ({ ...f, from: e.target.value }))} className="h-9" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted mb-1">Hasta</label>
+          <Input type="date" value={histFilters.to} onChange={(e) => setHistFilters((f) => ({ ...f, to: e.target.value }))} className="h-9" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted mb-1">Tipo</label>
+          <select
+            value={histFilters.type}
+            onChange={(e) => setHistFilters((f) => ({ ...f, type: e.target.value }))}
+            className="flex h-9 rounded-md border border-border bg-card px-3 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary min-w-[150px]"
+          >
+            <option value="">Todos</option>
+            {Object.entries(MOVEMENT_TYPE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </div>
+        {(histFilters.from || histFilters.to || histFilters.type) && (
+          <button
+            onClick={() => setHistFilters({ from: '', to: '', type: '' })}
+            className="text-sm text-muted hover:text-primary transition-colors h-9 self-end"
+          >
+            Limpiar
+          </button>
+        )}
+      </div>
       {isLoading ? (
         <div className="bg-card rounded-xl border border-border p-12 text-center text-muted">
           Cargando...

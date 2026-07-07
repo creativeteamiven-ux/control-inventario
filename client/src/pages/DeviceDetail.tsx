@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Package, Pencil, QrCode, TrendingDown, Trash2, ImagePlus, X } from 'lucide-react';
+import { ArrowLeft, Package, Pencil, QrCode, TrendingDown, Trash2, ImagePlus, X, Download, Star, ZoomIn } from 'lucide-react';
 import toast from 'react-hot-toast';
 import EditDeviceModal from '@/components/EditDeviceModal';
 import { api } from '@/lib/api';
@@ -45,6 +45,7 @@ export default function DeviceDetail() {
   const [activeImage, setActiveImage] = useState(0);
   const [uploadingImg, setUploadingImg] = useState(false);
   const [deletingImgId, setDeletingImgId] = useState<string | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const imgInputRef = useRef<HTMLInputElement>(null);
   const { data, isLoading } = useQuery({
     queryKey: ['device', id],
@@ -135,6 +136,28 @@ export default function DeviceDetail() {
     }
   };
 
+  const handleMakePrimary = async (imageId: string) => {
+    const ordered = [imageId, ...images.filter((im) => im.id !== imageId).map((im) => im.id)];
+    try {
+      await api.patch('/api/upload/images/reorder', { deviceId: d.id, orderedIds: ordered });
+      await queryClient.invalidateQueries({ queryKey: ['device', d.id] });
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
+      setActiveImage(0);
+      toast.success('Imagen principal actualizada');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error al reordenar';
+      toast.error(msg);
+    }
+  };
+
+  const downloadQr = () => {
+    if (!qrData?.qrCode) return;
+    const a = document.createElement('a');
+    a.href = qrData.qrCode;
+    a.download = `qr-${d.internalCode}.png`;
+    a.click();
+  };
+
   const handleDeleteImage = async (imageId: string) => {
     if (!confirm('¿Eliminar esta imagen?')) return;
     setDeletingImgId(imageId);
@@ -210,6 +233,41 @@ export default function DeviceDetail() {
         </div>
       </div>
 
+      {viewerOpen && images.length > 0 && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setViewerOpen(false)}
+        >
+          <button
+            type="button"
+            onClick={() => setViewerOpen(false)}
+            className="absolute top-4 right-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+            aria-label="Cerrar"
+          >
+            <X className="h-6 w-6" />
+          </button>
+          <img
+            src={images[mainIndex]?.url}
+            alt={d.name}
+            className="max-h-[90vh] max-w-[92vw] object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+          {images.length > 1 && (
+            <div className="absolute bottom-4 inset-x-0 flex justify-center gap-2" onClick={(e) => e.stopPropagation()}>
+              {images.map((img, i) => (
+                <button
+                  key={img.id}
+                  type="button"
+                  onClick={() => setActiveImage(i)}
+                  className={cn('h-2.5 w-2.5 rounded-full transition-colors', i === mainIndex ? 'bg-primary' : 'bg-white/40 hover:bg-white/70')}
+                  aria-label={`Ver imagen ${i + 1}`}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <EditDeviceModal
         open={editOpen}
         onOpenChange={setEditOpen}
@@ -223,19 +281,35 @@ export default function DeviceDetail() {
             <div className="relative h-64 bg-card-hover flex items-center justify-center group">
               {images.length > 0 ? (
                 <>
-                  <img src={images[mainIndex]?.url} alt={d.name} className="h-full w-full object-contain" />
-                  {canEdit && (
+                  <img
+                    src={images[mainIndex]?.url}
+                    alt={d.name}
+                    className="h-full w-full object-contain cursor-zoom-in"
+                    onClick={() => setViewerOpen(true)}
+                  />
+                  <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       type="button"
-                      onClick={() => handleDeleteImage(images[mainIndex].id)}
-                      disabled={deletingImgId === images[mainIndex]?.id}
-                      className="absolute top-2 right-2 rounded-full bg-black/60 p-1.5 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 disabled:opacity-60"
-                      title="Eliminar esta imagen"
-                      aria-label="Eliminar imagen"
+                      onClick={() => setViewerOpen(true)}
+                      className="rounded-full bg-black/60 p-1.5 text-white hover:bg-black/80"
+                      title="Ver en grande"
+                      aria-label="Ampliar imagen"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <ZoomIn className="h-4 w-4" />
                     </button>
-                  )}
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteImage(images[mainIndex].id)}
+                        disabled={deletingImgId === images[mainIndex]?.id}
+                        className="rounded-full bg-black/60 p-1.5 text-white hover:bg-red-600 disabled:opacity-60"
+                        title="Eliminar esta imagen"
+                        aria-label="Eliminar imagen"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
                 </>
               ) : (
                 <Package className="h-24 w-24 text-muted" />
@@ -254,16 +328,32 @@ export default function DeviceDetail() {
                     onClick={() => setActiveImage(i)}
                   >
                     <img src={img.url} alt={`${d.name} ${i + 1}`} className="h-full w-full object-cover" />
+                    {i === 0 && (
+                      <span className="absolute bottom-0 inset-x-0 bg-primary/80 text-[9px] text-white text-center leading-tight py-0.5">Principal</span>
+                    )}
                     {canEdit && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); handleDeleteImage(img.id); }}
-                        disabled={deletingImgId === img.id}
-                        className="absolute top-0.5 right-0.5 rounded-full bg-black/60 p-0.5 text-white opacity-0 group-hover/thumb:opacity-100 transition-opacity hover:bg-red-600 disabled:opacity-60"
-                        aria-label="Eliminar imagen"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
+                      <div className="absolute top-0.5 right-0.5 flex gap-0.5 opacity-0 group-hover/thumb:opacity-100 transition-opacity">
+                        {i !== 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleMakePrimary(img.id); }}
+                            className="rounded-full bg-black/60 p-0.5 text-white hover:bg-primary"
+                            title="Marcar como principal"
+                            aria-label="Marcar como principal"
+                          >
+                            <Star className="h-3 w-3" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteImage(img.id); }}
+                          disabled={deletingImgId === img.id}
+                          className="rounded-full bg-black/60 p-0.5 text-white hover:bg-red-600 disabled:opacity-60"
+                          aria-label="Eliminar imagen"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -443,7 +533,8 @@ export default function DeviceDetail() {
               <div className="flex flex-col items-center">
                 <img src={qrData.qrCode} alt="QR" className="w-48 h-48 rounded-lg bg-white p-2" />
                 <p className="text-sm text-muted mt-2">Escanea para ver la ficha del equipo</p>
-                <Button variant="outline" size="sm" className="mt-4">
+                <Button variant="outline" size="sm" className="mt-4" onClick={downloadQr}>
+                  <Download className="h-4 w-4 mr-2" />
                   Descargar QR
                 </Button>
               </div>

@@ -10,7 +10,7 @@ router.use(authenticate);
 
 router.get('/stats', async (req, res, next) => {
   try {
-    const [total, active, maintenance, loaned, totalValue, byCategory, byStatus] = await Promise.all([
+    const [total, active, maintenance, loaned, totalValue, byCategory, byStatus, byLocation, lowCondition, overdueLoans] = await Promise.all([
       prisma.device.count({ where: { deletedAt: null } }),
       prisma.device.count({ where: { status: 'ACTIVE', deletedAt: null } }),
       prisma.device.count({ where: { status: 'MAINTENANCE', deletedAt: null } }),
@@ -29,7 +29,28 @@ router.get('/stats', async (req, res, next) => {
         where: { deletedAt: null },
         _count: true,
       }),
+      prisma.device.groupBy({
+        by: ['location'],
+        where: { deletedAt: null },
+        _count: true,
+      }),
+      prisma.device.count({ where: { deletedAt: null, condition: { lt: 70 } } }),
+      prisma.loanRecord.count({ where: { status: 'ACTIVE', expectedReturn: { lt: new Date() } } }),
     ]);
+
+    const LOCATION_LABELS: Record<string, string> = {
+      MAIN_AUDITORIUM: 'Auditorio principal',
+      RECORDING_STUDIO: 'Estudio de grabación',
+      STORAGE_ROOM: 'Cuarto de almacenamiento',
+      YOUTH_ROOM: 'Salón de jóvenes',
+      CHAPEL: 'Capilla',
+      ON_LOAN: 'En préstamo',
+    };
+    const locationStats = byLocation.map((l) => ({
+      location: l.location,
+      name: LOCATION_LABELS[l.location] ?? String(l.location).replace(/_/g, ' '),
+      count: l._count,
+    }));
 
     const categories = await prisma.category.findMany({
       where: { id: { in: byCategory.map((c) => c.categoryId) } },
@@ -54,6 +75,9 @@ router.get('/stats', async (req, res, next) => {
       ...(canViewCost(perms) && { totalValue: Number(totalValue._sum.purchasePrice || 0) }),
       byCategory: categoryStats,
       byStatus: statusStats,
+      byLocation: locationStats,
+      lowCondition,
+      overdueLoans,
     });
   } catch (e) {
     next(e);

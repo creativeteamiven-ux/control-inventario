@@ -18,6 +18,7 @@ const Expenses = lazy(() => import('@/pages/Expenses'));
 const Budgets = lazy(() => import('@/pages/Budgets'));
 const Users = lazy(() => import('@/pages/Users'));
 const Settings = lazy(() => import('@/pages/Settings'));
+const Audit = lazy(() => import('@/pages/Audit'));
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -41,6 +42,12 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 function PermissionRoute({ permission, children }: { permission: string; children: React.ReactNode }) {
   const { user } = useAuth();
   if (!user?.permissions?.includes(permission)) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
+function RoleRoute({ roles, children }: { roles: string[]; children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!user || !roles.includes(user.role)) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -113,6 +120,14 @@ function AppRoutes() {
             <AdminRoute>
               <Settings />
             </AdminRoute>
+          }
+        />
+        <Route
+          path="audit"
+          element={
+            <RoleRoute roles={['ADMIN', 'MANAGER']}>
+              <Audit />
+            </RoleRoute>
           }
         />
       </Route>

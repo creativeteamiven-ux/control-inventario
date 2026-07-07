@@ -291,6 +291,131 @@ router.get('/inventory/pdf', requirePermission('reports.export'), async (req, re
   }
 });
 
+// Inventario completo en Excel.
+router.get('/inventory/export', requirePermission('reports.export'), async (req: AuthRequest, res, next) => {
+  try {
+    const categoryId = req.query.categoryId as string | undefined;
+    const where: Record<string, unknown> = { deletedAt: null };
+    if (categoryId) where.categoryId = categoryId;
+    const devices = await prisma.device.findMany({
+      where,
+      include: { category: { select: { name: true } } },
+      orderBy: [{ category: { name: 'asc' } }, { internalCode: 'asc' }],
+    });
+    const perms = req.user?.permissions ?? [];
+    const showCost = perms.includes('sensitive.view_cost');
+
+    const rows = devices.map((d) => {
+      const base: Record<string, unknown> = {
+        Código: d.internalCode,
+        Nombre: d.name,
+        Marca: d.brand,
+        Modelo: d.model,
+        'Número de serie': d.serialNumber ?? '',
+        Categoría: d.category?.name ?? '',
+        Estado: d.status,
+        Ubicación: locLabel(d.location),
+        'Condición (%)': d.condition,
+        Proveedor: d.supplier ?? '',
+        Observación: d.observation ?? '',
+      };
+      if (showCost) base['Precio compra (COP)'] = d.purchasePrice != null ? Number(d.purchasePrice) : '';
+      return base;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Inventario');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=inventario-thewarehouse.xlsx');
+    res.send(buf);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Reporte de mantenimientos en Excel, con rango de fechas (por fecha de inicio).
+router.get('/maintenance/export', requirePermission('reports.export'), async (req: AuthRequest, res, next) => {
+  try {
+    const where: Record<string, unknown> = {};
+    const range = buildDateRange(req.query.from as string, req.query.to as string);
+    if (range) where.startDate = range;
+    if (req.query.status) where.status = req.query.status;
+    const items = await prisma.maintenance.findMany({
+      where,
+      include: {
+        device: { select: { internalCode: true, name: true } },
+        user: { select: { name: true } },
+      },
+      orderBy: { startDate: 'desc' },
+    });
+    const perms = req.user?.permissions ?? [];
+    const showCost = perms.includes('sensitive.view_cost');
+    const rows = items.map((m) => {
+      const base: Record<string, unknown> = {
+        'Fecha inicio': m.startDate ? fmtDateTime(m.startDate) : '',
+        'Fecha fin': m.endDate ? fmtDateTime(m.endDate) : '',
+        Código: m.device?.internalCode ?? '',
+        Equipo: m.device?.name ?? '',
+        Tipo: m.type,
+        Estado: m.status,
+        Técnico: m.technician ?? '',
+        Descripción: m.description,
+        Notas: m.notes ?? '',
+        'Registrado por': m.user?.name ?? '',
+      };
+      if (showCost) base['Costo'] = m.cost != null ? Number(m.cost) : '';
+      return base;
+    });
+    const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'Fecha inicio': '', Código: '', Equipo: '' }]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Mantenimientos');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=mantenimientos-thewarehouse.xlsx');
+    res.send(buf);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Reporte de préstamos en Excel, con rango de fechas (por fecha de préstamo).
+router.get('/loans/export', requirePermission('reports.export'), async (req, res, next) => {
+  try {
+    const where: Record<string, unknown> = {};
+    const range = buildDateRange(req.query.from as string, req.query.to as string);
+    if (range) where.loanDate = range;
+    if (req.query.status) where.status = req.query.status;
+    const items = await prisma.loanRecord.findMany({
+      where,
+      include: { device: { select: { internalCode: true, name: true } } },
+      orderBy: { loanDate: 'desc' },
+    });
+    const rows = items.map((l) => ({
+      Código: l.device?.internalCode ?? '',
+      Equipo: l.device?.name ?? '',
+      Prestatario: l.borrowerName,
+      Correo: l.borrowerEmail ?? '',
+      Teléfono: l.borrowerPhone ?? '',
+      Propósito: l.purpose,
+      'Fecha préstamo': l.loanDate ? fmtDateTime(l.loanDate) : '',
+      'Devolución esperada': l.expectedReturn ? fmtDateTime(l.expectedReturn) : '',
+      'Devolución real': l.returnDate ? fmtDateTime(l.returnDate) : '',
+      Estado: l.status,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ Código: '', Equipo: '', Prestatario: '' }]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Préstamos');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=prestamos-thewarehouse.xlsx');
+    res.send(buf);
+  } catch (e) {
+    next(e);
+  }
+});
+
 // Valoración financiera del inventario: precio de compra total vs valor en libros (depreciado), por categoría.
 router.get('/financial', requirePermission('finance.view'), async (_req, res, next) => {
   try {

@@ -75,12 +75,18 @@ router.get('/', async (req, res, next) => {
     const type = req.query.type as string | undefined;
     const userId = req.query.userId as string | undefined;
     const deviceId = req.query.deviceId as string | undefined;
+    const from = req.query.from as string | undefined;
+    const to = req.query.to as string | undefined;
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
     const where: Record<string, unknown> = {};
     if (type) where.type = type;
     if (userId) where.userId = userId;
     if (deviceId) where.deviceId = deviceId;
+    const range: { gte?: Date; lte?: Date } = {};
+    if (from) { const s = new Date(from); if (!isNaN(s.getTime())) range.gte = s; }
+    if (to) { const e = new Date(to); if (!isNaN(e.getTime())) { e.setHours(23, 59, 59, 999); range.lte = e; } }
+    if (range.gte || range.lte) where.createdAt = range;
     const [items, total] = await Promise.all([
       prisma.movement.findMany({
         where,
