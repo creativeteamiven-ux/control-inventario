@@ -110,13 +110,23 @@ export default function Settings() {
   };
 
   const sendDigest = async () => {
+    const effective = recipientsData?.effective ?? [];
+    if (effective.length === 0) {
+      toast.error('Agrega al menos un destinatario en la sección de arriba antes de enviar el resumen.');
+      return;
+    }
     setSendingDigest(true);
     try {
       const { data } = await api.post('/api/alerts/send-digest', {});
-      toast.success(`Resumen enviado a ${data.recipients.length} destinatario(s) (${data.alertCount} alertas)`);
+      const n = data.alertCount ?? 0;
+      toast.success(
+        n === 0
+          ? `Resumen enviado a ${data.recipients.length} destinatario(s). Sin alertas pendientes — todo en orden.`
+          : `Resumen enviado a ${data.recipients.length} destinatario(s) (${n} alerta(s))`
+      );
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error al enviar';
-      toast.error(msg);
+      toast.error(msg, { duration: 8000 });
     } finally {
       setSendingDigest(false);
     }
@@ -401,6 +411,13 @@ export default function Settings() {
           </ul>
         )}
 
+        {mail?.provider === 'resend' && (
+          <p className="text-xs text-muted rounded-lg border border-border px-3 py-2">
+            Con <code className="font-mono">onboarding@resend.dev</code> (plan gratis sin dominio), los destinatarios deben ser
+            el mismo correo de tu cuenta Resend. Para enviar a otros correos, verifica tu dominio en Resend.
+          </p>
+        )}
+
         {recipientsData && (
           <p className="text-xs text-muted border-t border-border pt-3">
             <strong>Envío actual:</strong> {SOURCE_LABELS[recipientsData.source] ?? recipientsData.source}
@@ -434,13 +451,16 @@ export default function Settings() {
         <Button
           variant="outline"
           onClick={sendDigest}
-          disabled={sendingDigest || !mail?.configured}
+          disabled={sendingDigest || !mail?.configured || (recipientsData?.effective.length ?? 0) === 0}
           className="w-full sm:w-auto min-h-touch sm:min-h-0"
         >
           <Send className="h-4 w-4 mr-2" />
           {sendingDigest ? 'Enviando...' : 'Enviar resumen ahora a todos los destinatarios'}
         </Button>
         <p className="text-xs text-muted">
+          {(alerts?.count ?? 0) === 0
+            ? 'Hay 0 alertas ahora, pero el resumen manual igual se envía con el mensaje "Todo en orden". '
+            : ''}
           El envío automático diario usa el programador del servidor o un cron externo con{' '}
           <code className="font-mono">POST /api/alerts/cron/digest</code>.
         </p>

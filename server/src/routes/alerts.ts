@@ -167,7 +167,12 @@ router.post('/send-digest', requireRole('ADMIN'), async (req: AuthRequest, res, 
     if (!isMailerConfigured()) throw new AppError(400, 'El correo no está configurado.');
     // Envío manual: siempre manda (aunque no haya alertas) para confirmar que funciona.
     const result = await sendAlertDigest(prisma, { to: req.body?.to ? String(req.body.to) : undefined, onlyIfAny: false });
-    if (!result.sent) throw new AppError(result.reason === 'no-recipients' ? 400 : 503, formatMailError(result.error) || result.reason || 'No se pudo enviar');
+    if (!result.sent) {
+      if (result.reason === 'no-recipients') {
+        throw new AppError(400, 'No hay destinatarios configurados. Agrega al menos un correo en Destinatarios de alertas.');
+      }
+      throw new AppError(503, formatMailError(result.error) || result.reason || 'No se pudo enviar');
+    }
     res.json({ ok: true, recipients: result.recipients, alertCount: result.alertCount });
   } catch (e) {
     next(e);
