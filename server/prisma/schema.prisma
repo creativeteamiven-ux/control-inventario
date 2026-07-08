@@ -260,3 +260,13 @@ model AuditLog {
   userAgent  String?
   createdAt  DateTime @default(now())
 }
+
+// Destinatarios de alertas por correo (gestionados desde Configuración)
+model AlertRecipient {
+  id        String   @id @default(cuid())
+  email     String   @unique @db.VarChar(255)
+  label     String?  @db.VarChar(120)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

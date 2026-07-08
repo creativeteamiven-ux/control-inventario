@@ -5,7 +5,8 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { computeAlerts, alertsToHtml } from './alerts.js';
-import { sendMail, getAlertRecipients, isMailerConfigured } from './mailer.js';
+import { sendMail, isMailerConfigured } from './mailer.js';
+import { getEffectiveAlertEmails } from './alertRecipients.js';
 
 export interface DigestResult {
   sent: boolean;
@@ -16,13 +17,11 @@ export interface DigestResult {
   error?: string;
 }
 
-/** Resuelve destinatarios: override → ALERT_RECIPIENTS → todos los administradores. */
+/** Resuelve destinatarios: override → BD activos → ALERT_RECIPIENTS → administradores. */
 export async function resolveRecipients(prisma: PrismaClient, override?: string): Promise<string[]> {
   if (override) return [override];
-  const configured = getAlertRecipients();
-  if (configured.length > 0) return configured;
-  const admins = await prisma.user.findMany({ where: { role: 'ADMIN' }, select: { email: true } });
-  return admins.map((a) => a.email).filter(Boolean);
+  const { emails } = await getEffectiveAlertEmails(prisma);
+  return emails;
 }
 
 /**

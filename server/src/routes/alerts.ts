@@ -5,6 +5,8 @@ import { AppError } from '../middleware/errorHandler.js';
 import { computeAlerts } from '../lib/alerts.js';
 import { sendMail, verifyMailer, isMailerConfigured, getAlertRecipients } from '../lib/mailer.js';
 import { sendAlertDigest } from '../lib/notify.js';
+import { getDbAlertRecipients, getEffectiveAlertEmails, isValidEmail } from '../lib/alertRecipients.js';
+import { writeAudit } from '../lib/audit.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -54,7 +56,74 @@ router.get('/mail-status', requireRole('ADMIN'), async (_req, res, next) => {
   try {
     const configured = isMailerConfigured();
     const verify = configured ? await verifyMailer() : { ok: false, error: 'No configurado' };
-    res.json({ configured, verified: verify.ok, error: verify.error, recipients: getAlertRecipients() });
+    const { emails, source } = await getEffectiveAlertEmails(prisma);
+    res.json({
+      configured,
+      verified: verify.ok,
+      error: verify.error,
+      recipients: emails,
+      recipientSource: source,
+      envRecipients: getAlertRecipients(),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Listar destinatarios guardados en la base de datos (solo ADMIN). */
+router.get('/recipients', requireRole('ADMIN'), async (_req, res, next) => {
+  try {
+    const items = await getDbAlertRecipients(prisma);
+    const { emails, source } = await getEffectiveAlertEmails(prisma);
+    res.json({ items, effective: emails, source });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Agregar destinatario de alertas (solo ADMIN). */
+router.post('/recipients', requireRole('ADMIN'), async (req: AuthRequest, res, next) => {
+  try {
+    const email = String(req.body?.email ?? '').trim().toLowerCase();
+    const label = req.body?.label ? String(req.body.label).trim().slice(0, 120) : null;
+    if (!email) throw new AppError(400, 'El correo es obligatorio');
+    if (!isValidEmail(email)) throw new AppError(400, 'Correo electrónico no válido');
+    const item = await prisma.alertRecipient.upsert({
+      where: { email },
+      create: { email, label, active: true },
+      update: { label: label ?? undefined, active: true },
+    });
+    await writeAudit(req, 'AlertRecipient', item.id, 'CREATE', { email: item.email, label: item.label });
+    res.status(201).json(item);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Actualizar destinatario (activar/desactivar o etiqueta). */
+router.patch('/recipients/:id', requireRole('ADMIN'), async (req: AuthRequest, res, next) => {
+  try {
+    const existing = await prisma.alertRecipient.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw new AppError(404, 'Destinatario no encontrado');
+    const data: { label?: string | null; active?: boolean } = {};
+    if (req.body?.label !== undefined) data.label = req.body.label ? String(req.body.label).trim().slice(0, 120) : null;
+    if (req.body?.active !== undefined) data.active = Boolean(req.body.active);
+    const item = await prisma.alertRecipient.update({ where: { id: req.params.id }, data });
+    await writeAudit(req, 'AlertRecipient', item.id, 'UPDATE', data);
+    res.json(item);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Eliminar destinatario. */
+router.delete('/recipients/:id', requireRole('ADMIN'), async (req: AuthRequest, res, next) => {
+  try {
+    const existing = await prisma.alertRecipient.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw new AppError(404, 'Destinatario no encontrado');
+    await prisma.alertRecipient.delete({ where: { id: req.params.id } });
+    await writeAudit(req, 'AlertRecipient', existing.id, 'DELETE', { email: existing.email });
+    res.json({ ok: true });
   } catch (e) {
     next(e);
   }
