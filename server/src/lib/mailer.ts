@@ -97,17 +97,23 @@ export async function sendMail(input: SendMailInput): Promise<{ sent: boolean; s
     return { sent: false, skipped: true };
   }
   try {
-    await t.transporter.sendMail({
-      from: t.from,
-      to: Array.isArray(input.to) ? input.to.join(',') : input.to,
-      subject: input.subject,
-      html: input.html,
-      text: input.text,
-    });
+    await Promise.race([
+      t.transporter.sendMail({
+        from: t.from,
+        to: Array.isArray(input.to) ? input.to.join(',') : input.to,
+        subject: input.subject,
+        html: input.html,
+        text: input.text,
+      }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Connection timeout')), SEND_TIMEOUT_MS);
+      }),
+    ]);
     return { sent: true };
   } catch (e) {
-    console.error('[Mailer] Error al enviar:', (e as Error).message);
-    return { sent: false, error: (e as Error).message };
+    const msg = (e as Error).message;
+    console.error('[Mailer] Error al enviar:', msg);
+    return { sent: false, error: msg };
   }
 }
 
@@ -132,6 +138,25 @@ async function sendViaResend(input: SendMailInput): Promise<{ sent: boolean; err
 }
 
 const VERIFY_TIMEOUT_MS = 12_000;
+const SEND_TIMEOUT_MS = 15_000;
+
+function smtpBlockedHint(): string {
+  return 'Render plan gratuito bloquea SMTP. Añade RESEND_API_KEY en Render (gratis) o sube a un plan de pago.';
+}
+
+function isSmtpConnectivityError(error?: string): boolean {
+  if (!error) return false;
+  const lower = error.toLowerCase();
+  return lower.includes('timeout') || lower.includes('etimedout') || lower.includes('econnrefused') || lower.includes('network');
+}
+
+/** Mensaje amigable cuando falla el envío (p. ej. SMTP bloqueado en Render free). */
+export function formatMailError(error?: string): string {
+  if (getMailProvider() === 'gmail' && isSmtpConnectivityError(error)) {
+    return smtpBlockedHint();
+  }
+  return error || 'No se pudo enviar el correo';
+}
 
 /** Verifica la conexión (Resend: solo comprueba que hay API key; SMTP: handshake con timeout). */
 export async function verifyMailer(): Promise<{ ok: boolean; error?: string; hint?: string }> {
@@ -154,7 +179,7 @@ export async function verifyMailer(): Promise<{ ok: boolean; error?: string; hin
     const msg = (e as Error).message;
     const hint =
       provider === 'gmail'
-        ? 'Render plan gratuito bloquea SMTP (puertos 465/587). Opciones: añade RESEND_API_KEY en Render (gratis, vía HTTP) o sube a un plan de pago de Render.'
+        ? smtpBlockedHint()
         : undefined;
     return { ok: false, error: msg, hint };
   }

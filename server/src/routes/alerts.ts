@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { computeAlerts } from '../lib/alerts.js';
-import { sendMail, verifyMailer, isMailerConfigured, getAlertRecipients, getMailProvider } from '../lib/mailer.js';
+import { sendMail, verifyMailer, isMailerConfigured, getAlertRecipients, getMailProvider, formatMailError } from '../lib/mailer.js';
 import { sendAlertDigest } from '../lib/notify.js';
 import { getDbAlertRecipients, getEffectiveAlertEmails, isValidEmail } from '../lib/alertRecipients.js';
 import { writeAudit } from '../lib/audit.js';
@@ -154,7 +154,7 @@ router.post('/test', requireRole('ADMIN'), async (req: AuthRequest, res, next) =
       subject: 'Correo de prueba — The Warehouse',
       html: '<p>✅ La configuración de correo funciona correctamente.</p>',
     });
-    if (!result.sent) throw new AppError(500, result.error || 'No se pudo enviar');
+    if (!result.sent) throw new AppError(503, formatMailError(result.error));
     res.json({ ok: true, to });
   } catch (e) {
     next(e);
@@ -167,7 +167,7 @@ router.post('/send-digest', requireRole('ADMIN'), async (req: AuthRequest, res, 
     if (!isMailerConfigured()) throw new AppError(400, 'El correo no está configurado.');
     // Envío manual: siempre manda (aunque no haya alertas) para confirmar que funciona.
     const result = await sendAlertDigest(prisma, { to: req.body?.to ? String(req.body.to) : undefined, onlyIfAny: false });
-    if (!result.sent) throw new AppError(result.reason === 'no-recipients' ? 400 : 500, result.error || result.reason || 'No se pudo enviar');
+    if (!result.sent) throw new AppError(result.reason === 'no-recipients' ? 400 : 503, formatMailError(result.error) || result.reason || 'No se pudo enviar');
     res.json({ ok: true, recipients: result.recipients, alertCount: result.alertCount });
   } catch (e) {
     next(e);
