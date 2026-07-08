@@ -16,6 +16,8 @@ interface MailStatus {
   error?: string;
   hint?: string;
   provider?: 'resend' | 'gmail' | 'smtp' | null;
+  resendSandbox?: boolean;
+  resendAllowedEmail?: string;
   recipients: string[];
   recipientSource?: 'database' | 'env' | 'admins' | 'none';
   envRecipients?: string[];
@@ -411,7 +413,18 @@ export default function Settings() {
           </ul>
         )}
 
-        {mail?.provider === 'resend' && (
+        {mail?.resendSandbox && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+            Modo prueba Resend{mail.resendAllowedEmail ? (
+              <> — destinatarios permitidos: solo <strong>{mail.resendAllowedEmail}</strong></>
+            ) : (
+              <> — solo puedes enviar al correo de tu cuenta Resend</>
+            )}
+            . Para otros correos, verifica tu dominio en Resend.
+          </p>
+        )}
+
+        {mail?.provider === 'resend' && !mail?.resendSandbox && (
           <p className="text-xs text-muted rounded-lg border border-border px-3 py-2">
             Con <code className="font-mono">onboarding@resend.dev</code> (plan gratis sin dominio), los destinatarios deben ser
             el mismo correo de tu cuenta Resend. Para enviar a otros correos, verifica tu dominio en Resend.

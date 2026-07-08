@@ -117,10 +117,39 @@ export async function sendMail(input: SendMailInput): Promise<{ sent: boolean; s
   }
 }
 
+function isResendSandbox(): boolean {
+  const from = (process.env.MAIL_FROM || 'onboarding@resend.dev').toLowerCase();
+  return from.includes('onboarding@resend.dev');
+}
+
+function parseResendError(body: string): string {
+  try {
+    const data = JSON.parse(body) as { message?: string };
+    if (data.message) return data.message;
+  } catch {
+    // texto plano
+  }
+  return body;
+}
+
 async function sendViaResend(input: SendMailInput): Promise<{ sent: boolean; error?: string }> {
   const apiKey = process.env.RESEND_API_KEY!.trim();
   const from = process.env.MAIL_FROM || 'The Warehouse <onboarding@resend.dev>';
-  const to = Array.isArray(input.to) ? input.to : [input.to];
+  const to = (Array.isArray(input.to) ? input.to : [input.to]).map((e) => e.trim().toLowerCase());
+
+  if (isResendSandbox()) {
+    const allowed = process.env.RESEND_SANDBOX_EMAIL?.trim().toLowerCase();
+    if (allowed) {
+      const invalid = to.filter((e) => e !== allowed);
+      if (invalid.length > 0) {
+        return {
+          sent: false,
+          error: `Resend (modo prueba): solo puedes enviar a ${allowed}. Destinatarios no permitidos: ${invalid.join(', ')}. Verifica tu dominio en resend.com/domains para enviar a otros.`,
+        };
+      }
+    }
+  }
+
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -129,7 +158,7 @@ async function sendViaResend(input: SendMailInput): Promise<{ sent: boolean; err
     });
     if (!res.ok) {
       const body = await res.text();
-      return { sent: false, error: body || `Resend HTTP ${res.status}` };
+      return { sent: false, error: parseResendError(body) || `Resend HTTP ${res.status}` };
     }
     return { sent: true };
   } catch (e) {
@@ -152,10 +181,22 @@ function isSmtpConnectivityError(error?: string): boolean {
 
 /** Mensaje amigable cuando falla el envío (p. ej. SMTP bloqueado en Render free). */
 export function formatMailError(error?: string): string {
+  if (!error) return 'No se pudo enviar el correo';
   if (getMailProvider() === 'gmail' && isSmtpConnectivityError(error)) {
     return smtpBlockedHint();
   }
-  return error || 'No se pudo enviar el correo';
+  const lower = error.toLowerCase();
+  if (lower.includes('only send testing emails') || lower.includes('verify a domain at resend.com')) {
+    return 'Resend (modo prueba): solo puedes enviar al correo de tu cuenta Resend. Deja solo ese destinatario o verifica tu dominio en resend.com/domains.';
+  }
+  if (lower.includes('resend (modo prueba)')) return error;
+  return error;
+}
+
+export function getResendSandboxInfo(): { sandbox: boolean; allowedEmail?: string } {
+  if (!isResendSandbox()) return { sandbox: false };
+  const allowed = process.env.RESEND_SANDBOX_EMAIL?.trim();
+  return { sandbox: true, allowedEmail: allowed || undefined };
 }
 
 /** Verifica la conexión (Resend: solo comprueba que hay API key; SMTP: handshake con timeout). */

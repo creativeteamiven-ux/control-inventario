@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { computeAlerts } from '../lib/alerts.js';
-import { sendMail, verifyMailer, isMailerConfigured, getAlertRecipients, getMailProvider, formatMailError } from '../lib/mailer.js';
+import { sendMail, verifyMailer, isMailerConfigured, getAlertRecipients, getMailProvider, formatMailError, getResendSandboxInfo } from '../lib/mailer.js';
 import { sendAlertDigest } from '../lib/notify.js';
 import { getDbAlertRecipients, getEffectiveAlertEmails, isValidEmail } from '../lib/alertRecipients.js';
 import { writeAudit } from '../lib/audit.js';
@@ -69,12 +69,15 @@ router.get('/mail-status', requireRole('ADMIN'), async (req, res, next) => {
       error = 'No configurado';
     }
     const { emails, source } = await getEffectiveAlertEmails(prisma);
+    const resendSandbox = getResendSandboxInfo();
     res.json({
       configured,
       verified,
       error,
       hint,
       provider: getMailProvider(),
+      resendSandbox: resendSandbox.sandbox,
+      resendAllowedEmail: resendSandbox.allowedEmail,
       recipients: emails,
       recipientSource: source,
       envRecipients: getAlertRecipients(),
