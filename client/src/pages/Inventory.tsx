@@ -214,6 +214,21 @@ export default function Inventory() {
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / limit);
 
+  const paginationBar = (className?: string) =>
+    totalPages > 1 ? (
+      <div className={cn('flex justify-center items-center gap-2 py-4 mt-2 border-t border-border', className)}>
+        <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+          Anterior
+        </Button>
+        <span className="py-2 px-4 text-sm text-muted">
+          Página {page} de {totalPages}
+        </span>
+        <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+          Siguiente
+        </Button>
+      </div>
+    ) : null;
+
   const onPageIds = devices.map((d: { id: string }) => d.id);
   const allOnPageSelected = onPageIds.length > 0 && onPageIds.every((id: string) => selectedIds.has(id));
   const toggleSelectAll = () => {
@@ -773,10 +788,12 @@ export default function Inventory() {
           );
         })}
       </div>
+      {paginationBar('md:hidden')}
 
       {/* Vista desktop: tabla o grid */}
       {view === 'table' ? (
-        <div className="hidden md:block bg-card rounded-xl border border-border overflow-hidden">
+        <div className="hidden md:block">
+          <div className="bg-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -869,22 +886,12 @@ export default function Inventory() {
               </tbody>
             </table>
           </div>
-          {totalPages > 1 && (
-            <div className="flex justify-center gap-2 py-4 border-t border-border">
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                Anterior
-              </Button>
-              <span className="py-2 px-4 text-sm text-muted">
-                Página {page} de {totalPages}
-              </span>
-              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-                Siguiente
-              </Button>
-            </div>
-          )}
+          </div>
+          {paginationBar()}
         </div>
       ) : (
-        <div className="hidden md:grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="hidden md:block">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {devices.map((d: { id: string; internalCode: string; name: string; brand: string; model: string; category: { name: string; color: string }; status: string; condition?: number; observation?: string | null; images: { url: string }[] }) => {
             const hasObservation = d.status === 'ACTIVE' && (!!(d.observation?.trim()) || (d.condition ?? 100) < 70);
             return (
@@ -946,6 +953,8 @@ export default function Inventory() {
               </Button>
             </div>
           );})}
+          </div>
+          {paginationBar()}
         </div>
       )}
         </>
