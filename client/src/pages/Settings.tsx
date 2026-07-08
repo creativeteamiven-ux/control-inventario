@@ -12,12 +12,20 @@ import { cn } from '@/lib/utils';
 
 interface MailStatus {
   configured: boolean;
-  verified: boolean;
+  verified: boolean | null;
   error?: string;
+  hint?: string;
+  provider?: 'resend' | 'gmail' | 'smtp' | null;
   recipients: string[];
   recipientSource?: 'database' | 'env' | 'admins' | 'none';
   envRecipients?: string[];
 }
+
+const PROVIDER_LABELS: Record<string, string> = {
+  resend: 'Resend (HTTP)',
+  gmail: 'Gmail SMTP',
+  smtp: 'SMTP personalizado',
+};
 
 interface AlertRecipient {
   id: string;
@@ -53,13 +61,15 @@ export default function Settings() {
   const [newEmail, setNewEmail] = useState('');
   const [newLabel, setNewLabel] = useState('');
   const [adding, setAdding] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
-  const { data: mail, refetch: refetchMail, isLoading: loadingMail } = useQuery<MailStatus>({
+  const { data: mail, isLoading: loadingMail } = useQuery<MailStatus>({
     queryKey: ['mail-status'],
     queryFn: async () => {
       const { data } = await api.get('/api/alerts/mail-status');
       return data;
     },
+    staleTime: 30_000,
   });
 
   const { data: recipientsData, isLoading: loadingRecipients } = useQuery<RecipientsResponse>({
@@ -154,6 +164,62 @@ export default function Settings() {
     }
   };
 
+  const checkConnection = async () => {
+    setVerifying(true);
+    try {
+      const { data } = await api.get<MailStatus>('/api/alerts/mail-status', { params: { verify: '1' } });
+      queryClient.setQueryData(['mail-status'], data);
+      if (data.verified) {
+        toast.success('Conexión de correo verificada');
+      } else if (data.hint) {
+        toast.error(data.hint, { duration: 8000 });
+      } else {
+        toast.error(data.error || 'No se pudo verificar la conexión');
+      }
+    } catch {
+      toast.error('Error al comprobar el correo');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const mailStatusLabel = () => {
+    if (loadingMail) return <span className="text-sm text-muted">Cargando...</span>;
+    if (!mail?.configured) {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-sm text-muted">
+          <XCircle className="h-4 w-4" /> No configurado
+        </span>
+      );
+    }
+    if (mail.provider === 'resend') {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-sm text-green-500 font-medium">
+          <CheckCircle2 className="h-4 w-4" /> {PROVIDER_LABELS.resend}
+        </span>
+      );
+    }
+    if (mail.verified === true) {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-sm text-green-500 font-medium">
+          <CheckCircle2 className="h-4 w-4" /> Conectado ({PROVIDER_LABELS[mail.provider ?? ''] ?? 'SMTP'})
+        </span>
+      );
+    }
+    if (mail.verified === false) {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-sm text-amber-500">
+          <XCircle className="h-4 w-4" /> Error de verificación
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1.5 text-sm text-blue-500">
+        <CheckCircle2 className="h-4 w-4" /> Configurado ({PROVIDER_LABELS[mail.provider ?? ''] ?? 'SMTP'})
+      </span>
+    );
+  };
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 max-w-3xl">
       <div>
@@ -168,39 +234,44 @@ export default function Settings() {
             <Mail className="h-5 w-5 text-primary" />
             <h2 className="font-display font-semibold text-lg">Servidor de correo</h2>
           </div>
-          {loadingMail ? (
-            <span className="text-sm text-muted">Comprobando...</span>
-          ) : mail?.configured && mail?.verified ? (
-            <span className="inline-flex items-center gap-1.5 text-sm text-green-500 font-medium">
-              <CheckCircle2 className="h-4 w-4" /> Conectado y verificado
-            </span>
-          ) : mail?.configured ? (
-            <span className="inline-flex items-center gap-1.5 text-sm text-amber-500">
-              <XCircle className="h-4 w-4" /> Error de verificación
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 text-sm text-muted">
-              <XCircle className="h-4 w-4" /> No configurado
-            </span>
-          )}
+          {mailStatusLabel()}
         </div>
 
         {!mail?.configured && (
-          <div className="rounded-lg bg-blue-500/10 border border-blue-500/30 p-4 text-sm space-y-2">
+          <div className="rounded-lg bg-blue-500/10 border border-blue-500/30 p-4 text-sm space-y-3">
             <div className="flex items-center gap-2 font-medium text-blue-600 dark:text-blue-400">
-              <Info className="h-4 w-4 shrink-0" /> Activar Gmail gratuito (contraseña de aplicación)
+              <Info className="h-4 w-4 shrink-0" /> Opciones en Render (backend)
             </div>
-            <ol className="list-decimal list-inside space-y-1 text-foreground/90 text-xs sm:text-sm">
-              <li>Verificación en 2 pasos en Google.</li>
-              <li>Contraseña de aplicación en Seguridad de Google.</li>
-              <li>En Render: <code className="font-mono">GMAIL_USER</code> y <code className="font-mono">GMAIL_APP_PASSWORD</code>.</li>
-              <li>Reinicia el servicio y envía una prueba abajo.</li>
-            </ol>
+            <div className="space-y-2 text-xs sm:text-sm text-foreground/90">
+              <p><strong>Recomendado (plan gratuito de Render):</strong> Resend — crea cuenta en resend.com, verifica tu dominio o usa el correo de prueba, y en Render añade:</p>
+              <ul className="list-disc list-inside ml-1 space-y-0.5 font-mono text-xs">
+                <li>RESEND_API_KEY = re_...</li>
+                <li>MAIL_FROM = The Warehouse &lt;tu@correo.com&gt;</li>
+              </ul>
+              <p className="pt-1"><strong>Alternativa (plan de pago Render):</strong> Gmail con contraseña de aplicación:</p>
+              <ul className="list-disc list-inside ml-1 space-y-0.5 font-mono text-xs">
+                <li>GMAIL_USER</li>
+                <li>GMAIL_APP_PASSWORD</li>
+              </ul>
+            </div>
           </div>
         )}
 
-        {mail?.configured && !mail?.verified && mail?.error && (
+        {mail?.configured && mail.provider === 'gmail' && mail.verified !== true && (
+          <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-4 text-sm space-y-1">
+            <p className="font-medium text-amber-600 dark:text-amber-400">Gmail SMTP en Render plan gratuito</p>
+            <p className="text-xs sm:text-sm text-foreground/90">
+              Render bloquea los puertos SMTP (465/587) en el plan gratuito. Por eso aparece &quot;Connection timeout&quot;.
+              Añade <code className="font-mono">RESEND_API_KEY</code> en Render (gratis, 100 correos/día) o sube a un plan de pago.
+            </p>
+          </div>
+        )}
+
+        {mail?.configured && mail.verified === false && mail?.error && (
           <p className="text-sm text-amber-600">{mail.error}</p>
+        )}
+        {mail?.hint && (
+          <p className="text-sm text-muted">{mail.hint}</p>
         )}
 
         <div className="flex flex-col sm:flex-row gap-2 sm:items-end pt-1">
@@ -216,8 +287,14 @@ export default function Settings() {
           <Button onClick={sendTest} disabled={sending || !mail?.configured} className="min-h-touch sm:min-h-0 shrink-0">
             <Send className="h-4 w-4 mr-2" /> {sending ? 'Enviando...' : 'Enviar prueba'}
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => refetchMail()} className="shrink-0">
-            Revisar conexión
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={checkConnection}
+            disabled={verifying || !mail?.configured || mail?.provider === 'resend'}
+            className="shrink-0"
+          >
+            {verifying ? 'Comprobando...' : 'Revisar conexión'}
           </Button>
         </div>
       </section>

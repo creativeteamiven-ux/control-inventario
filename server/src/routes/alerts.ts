@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { computeAlerts } from '../lib/alerts.js';
-import { sendMail, verifyMailer, isMailerConfigured, getAlertRecipients } from '../lib/mailer.js';
+import { sendMail, verifyMailer, isMailerConfigured, getAlertRecipients, getMailProvider } from '../lib/mailer.js';
 import { sendAlertDigest } from '../lib/notify.js';
 import { getDbAlertRecipients, getEffectiveAlertEmails, isValidEmail } from '../lib/alertRecipients.js';
 import { writeAudit } from '../lib/audit.js';
@@ -51,16 +51,30 @@ router.get('/', async (_req, res, next) => {
   }
 });
 
-/** Estado de la configuración de correo (solo ADMIN). */
-router.get('/mail-status', requireRole('ADMIN'), async (_req, res, next) => {
+/** Estado de la configuración de correo (solo ADMIN). verify=1 comprueba SMTP (lento). */
+router.get('/mail-status', requireRole('ADMIN'), async (req, res, next) => {
   try {
     const configured = isMailerConfigured();
-    const verify = configured ? await verifyMailer() : { ok: false, error: 'No configurado' };
+    const shouldVerify = req.query.verify === 'true' || req.query.verify === '1';
+    let verified: boolean | null = null;
+    let error: string | undefined;
+    let hint: string | undefined;
+    if (configured && shouldVerify) {
+      const verify = await verifyMailer();
+      verified = verify.ok;
+      error = verify.error;
+      hint = verify.hint;
+    } else if (!configured) {
+      verified = false;
+      error = 'No configurado';
+    }
     const { emails, source } = await getEffectiveAlertEmails(prisma);
     res.json({
       configured,
-      verified: verify.ok,
-      error: verify.error,
+      verified,
+      error,
+      hint,
+      provider: getMailProvider(),
       recipients: emails,
       recipientSource: source,
       envRecipients: getAlertRecipients(),

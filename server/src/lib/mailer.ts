@@ -22,7 +22,16 @@ function getConfig(): MailerConfig | null {
   if (gmailUser && gmailPass) {
     return {
       from: process.env.MAIL_FROM || gmailUser,
-      options: { service: 'gmail', auth: { user: gmailUser, pass: gmailPass } } as nodemailer.TransportOptions,
+      // SMTP explícito: más fiable en Render/Vercel que service:'gmail'
+      options: {
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        auth: { user: gmailUser, pass: gmailPass },
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 15_000,
+      } as nodemailer.TransportOptions,
     };
   }
   const host = process.env.SMTP_HOST;
@@ -53,8 +62,17 @@ function getTransporter(): { transporter: Transporter; from: string } | null {
   return cached;
 }
 
+export type MailProvider = 'resend' | 'gmail' | 'smtp' | null;
+
+export function getMailProvider(): MailProvider {
+  if (process.env.RESEND_API_KEY?.trim()) return 'resend';
+  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) return 'gmail';
+  if (process.env.SMTP_HOST) return 'smtp';
+  return null;
+}
+
 export function isMailerConfigured(): boolean {
-  return getConfig() !== null;
+  return getMailProvider() !== null;
 }
 
 export function getAlertRecipients(): string[] {
@@ -70,9 +88,12 @@ export interface SendMailInput {
 }
 
 export async function sendMail(input: SendMailInput): Promise<{ sent: boolean; skipped?: boolean; error?: string }> {
+  if (getMailProvider() === 'resend') {
+    return sendViaResend(input);
+  }
   const t = getTransporter();
   if (!t) {
-    console.warn('[Mailer] No configurado (faltan variables SMTP/Gmail). Se omite el envío.');
+    console.warn('[Mailer] No configurado (faltan variables SMTP/Gmail/Resend). Se omite el envío.');
     return { sent: false, skipped: true };
   }
   try {
@@ -90,15 +111,52 @@ export async function sendMail(input: SendMailInput): Promise<{ sent: boolean; s
   }
 }
 
-/** Verifica la conexión SMTP. Útil para un endpoint de prueba. */
-export async function verifyMailer(): Promise<{ ok: boolean; error?: string }> {
+async function sendViaResend(input: SendMailInput): Promise<{ sent: boolean; error?: string }> {
+  const apiKey = process.env.RESEND_API_KEY!.trim();
+  const from = process.env.MAIL_FROM || 'The Warehouse <onboarding@resend.dev>';
+  const to = Array.isArray(input.to) ? input.to : [input.to];
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to, subject: input.subject, html: input.html, text: input.text }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      return { sent: false, error: body || `Resend HTTP ${res.status}` };
+    }
+    return { sent: true };
+  } catch (e) {
+    return { sent: false, error: (e as Error).message };
+  }
+}
+
+const VERIFY_TIMEOUT_MS = 12_000;
+
+/** Verifica la conexión (Resend: solo comprueba que hay API key; SMTP: handshake con timeout). */
+export async function verifyMailer(): Promise<{ ok: boolean; error?: string; hint?: string }> {
+  const provider = getMailProvider();
+  if (provider === 'resend') return { ok: true };
+  if (!provider) return { ok: false, error: 'No hay configuración de correo' };
+
+  resetMailer();
   const t = getTransporter();
   if (!t) return { ok: false, error: 'No hay configuración de correo' };
   try {
-    await t.transporter.verify();
+    await Promise.race([
+      t.transporter.verify(),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Connection timeout')), VERIFY_TIMEOUT_MS);
+      }),
+    ]);
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    const msg = (e as Error).message;
+    const hint =
+      provider === 'gmail'
+        ? 'Render plan gratuito bloquea SMTP (puertos 465/587). Opciones: añade RESEND_API_KEY en Render (gratis, vía HTTP) o sube a un plan de pago de Render.'
+        : undefined;
+    return { ok: false, error: msg, hint };
   }
 }
 
