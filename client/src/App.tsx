@@ -1,24 +1,25 @@
-import { Suspense, lazy } from 'react';
+import { Suspense } from 'react';
 import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
+import { lazyWithRetry } from '@/lib/lazyWithRetry';
 import Login from '@/pages/Login';
 import Layout from '@/components/Layout';
 
-const Dashboard = lazy(() => import('@/pages/Dashboard'));
-const Inventory = lazy(() => import('@/pages/Inventory'));
-const DeviceDetail = lazy(() => import('@/pages/DeviceDetail'));
-const Scanner = lazy(() => import('@/pages/Scanner'));
-const Categories = lazy(() => import('@/pages/Categories'));
-const Maintenance = lazy(() => import('@/pages/Maintenance'));
-const Loans = lazy(() => import('@/pages/Loans'));
-const Movements = lazy(() => import('@/pages/Movements'));
-const Locations = lazy(() => import('@/pages/Locations'));
-const Reports = lazy(() => import('@/pages/Reports'));
-const Expenses = lazy(() => import('@/pages/Expenses'));
-const Budgets = lazy(() => import('@/pages/Budgets'));
-const Users = lazy(() => import('@/pages/Users'));
-const Settings = lazy(() => import('@/pages/Settings'));
-const Audit = lazy(() => import('@/pages/Audit'));
+const Dashboard = lazyWithRetry(() => import('@/pages/Dashboard'));
+const Inventory = lazyWithRetry(() => import('@/pages/Inventory'));
+const DeviceDetail = lazyWithRetry(() => import('@/pages/DeviceDetail'));
+const Scanner = lazyWithRetry(() => import('@/pages/Scanner'));
+const Categories = lazyWithRetry(() => import('@/pages/Categories'));
+const Maintenance = lazyWithRetry(() => import('@/pages/Maintenance'));
+const Loans = lazyWithRetry(() => import('@/pages/Loans'));
+const Movements = lazyWithRetry(() => import('@/pages/Movements'));
+const Locations = lazyWithRetry(() => import('@/pages/Locations'));
+const Reports = lazyWithRetry(() => import('@/pages/Reports'));
+const Expenses = lazyWithRetry(() => import('@/pages/Expenses'));
+const Budgets = lazyWithRetry(() => import('@/pages/Budgets'));
+const Users = lazyWithRetry(() => import('@/pages/Users'));
+const Settings = lazyWithRetry(() => import('@/pages/Settings'));
+const Audit = lazyWithRetry(() => import('@/pages/Audit'));
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
