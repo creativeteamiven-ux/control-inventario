@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { authenticate, requireRole } from '../middleware/auth.js';
+import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { writeAudit } from '../lib/audit.js';
+import type { DeviceLocation } from '@prisma/client';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -49,6 +51,7 @@ router.post('/', requireRole('ADMIN', 'MANAGER'), async (req, res, next) => {
     const location = await prisma.location.create({
       data: { code, name, sortOrder },
     });
+    await writeAudit(req as AuthRequest, 'Location', location.id, 'CREATE', { name, code });
     res.status(201).json(location);
   } catch (e) {
     next(e);
@@ -68,7 +71,39 @@ router.patch('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res, next) => 
       where: { id },
       data: update,
     });
+    await writeAudit(req as AuthRequest, 'Location', location.id, 'UPDATE', update);
     res.json(location);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Eliminar un lugar (solo ADMIN/MANAGER). Bloquea si hay equipos activos ahí. */
+router.delete('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res, next) => {
+  try {
+    const existing = await prisma.location.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw new AppError(404, 'Lugar no encontrado');
+
+    const knownLocations: DeviceLocation[] = [
+      'MAIN_AUDITORIUM',
+      'RECORDING_STUDIO',
+      'STORAGE_ROOM',
+      'YOUTH_ROOM',
+      'CHAPEL',
+      'ON_LOAN',
+    ];
+    if (knownLocations.includes(existing.code as DeviceLocation)) {
+      const active = await prisma.device.count({
+        where: { location: existing.code as DeviceLocation, deletedAt: null },
+      });
+      if (active > 0) {
+        throw new AppError(400, `No se puede eliminar: hay ${active} equipo(s) activo(s) en este lugar.`);
+      }
+    }
+
+    await prisma.location.delete({ where: { id: req.params.id } });
+    await writeAudit(req as AuthRequest, 'Location', existing.id, 'DELETE', { name: existing.name, code: existing.code });
+    res.json({ ok: true });
   } catch (e) {
     next(e);
   }

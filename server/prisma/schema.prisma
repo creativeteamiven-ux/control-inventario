@@ -115,8 +115,8 @@ model Device {
   model          String
   serialNumber   String?         @unique
   internalCode   String          @unique
-  categoryId     String
-  category       Category        @relation(fields: [categoryId], references: [id])
+  categoryId     String?
+  category       Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   status         DeviceStatus    @default(ACTIVE)
   location       DeviceLocation  @default(STORAGE_ROOM)
   purchaseDate   DateTime?

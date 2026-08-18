@@ -8,6 +8,10 @@ import { writeAudit } from '../lib/audit.js';
 const router = Router();
 const prisma = new PrismaClient();
 
+const ACTIVE_DEVICE_COUNT = {
+  select: { devices: { where: { deletedAt: null } } },
+} as const;
+
 router.use(authenticate);
 
 router.get('/', async (req, res, next) => {
@@ -18,10 +22,10 @@ router.get('/', async (req, res, next) => {
         children: {
           include: {
             children: true,
-            _count: { select: { devices: true } },
+            _count: ACTIVE_DEVICE_COUNT,
           },
         },
-        _count: { select: { devices: true } },
+        _count: ACTIVE_DEVICE_COUNT,
       },
       orderBy: { name: 'asc' },
     });
@@ -34,7 +38,7 @@ router.get('/', async (req, res, next) => {
 router.get('/tree', async (req, res, next) => {
   try {
     const categories = await prisma.category.findMany({
-      include: { _count: { select: { devices: true } } },
+      include: { _count: ACTIVE_DEVICE_COUNT },
       orderBy: { name: 'asc' },
     });
     res.json(categories);
@@ -47,7 +51,7 @@ router.get('/:id', async (req, res, next) => {
   try {
     const cat = await prisma.category.findUnique({
       where: { id: req.params.id },
-      include: { parent: true, children: true, _count: { select: { devices: true } } },
+      include: { parent: true, children: true, _count: ACTIVE_DEVICE_COUNT },
     });
     if (!cat) throw new AppError(404, 'Categoría no encontrada');
     res.json(cat);
@@ -85,9 +89,24 @@ router.patch('/:id', requirePermission('categories.edit'), async (req: AuthReque
 
 router.delete('/:id', requirePermission('categories.edit'), async (req: AuthRequest, res, next) => {
   try {
+    const existing = await prisma.category.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw new AppError(404, 'Categoría no encontrada');
+
+    const childCount = await prisma.category.count({ where: { parentId: req.params.id } });
+    if (childCount > 0) {
+      throw new AppError(400, 'No se puede eliminar: tiene subcategorías. Elimínalas o muévelas primero.');
+    }
+
+    const activeDevices = await prisma.device.count({
+      where: { categoryId: req.params.id, deletedAt: null },
+    });
+    if (activeDevices > 0) {
+      throw new AppError(400, `No se puede eliminar: hay ${activeDevices} equipo(s) activo(s) en esta categoría.`);
+    }
+
     await prisma.category.delete({ where: { id: req.params.id } });
-    await writeAudit(req, 'Category', req.params.id, 'DELETE');
-    res.status(204).send();
+    await writeAudit(req, 'Category', req.params.id, 'DELETE', { name: existing.name });
+    res.json({ ok: true });
   } catch (e) {
     next(e);
   }

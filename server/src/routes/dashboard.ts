@@ -21,7 +21,7 @@ router.get('/stats', async (req, res, next) => {
       }),
       prisma.device.groupBy({
         by: ['categoryId'],
-        where: { deletedAt: null },
+        where: { deletedAt: null, categoryId: { not: null } },
         _count: true,
       }),
       prisma.device.groupBy({
@@ -52,17 +52,20 @@ router.get('/stats', async (req, res, next) => {
       count: l._count,
     }));
 
+    const categoryIds = byCategory.map((c) => c.categoryId).filter((id): id is string => !!id);
     const categories = await prisma.category.findMany({
-      where: { id: { in: byCategory.map((c) => c.categoryId) } },
+      where: { id: { in: categoryIds } },
       select: { id: true, name: true, color: true },
     });
     const categoryMap = Object.fromEntries(categories.map((c) => [c.id, c]));
-    const categoryStats = byCategory.map((c) => ({
-      categoryId: c.categoryId,
-      categoryName: categoryMap[c.categoryId]?.name || 'Sin nombre',
-      color: categoryMap[c.categoryId]?.color || '#64748b',
-      count: c._count,
-    }));
+    const categoryStats = byCategory
+      .filter((c): c is typeof c & { categoryId: string } => !!c.categoryId)
+      .map((c) => ({
+        categoryId: c.categoryId,
+        categoryName: categoryMap[c.categoryId]?.name || 'Sin nombre',
+        color: categoryMap[c.categoryId]?.color || '#64748b',
+        count: c._count,
+      }));
 
     const statusStats = byStatus.map((s) => ({ status: s.status, count: s._count }));
 

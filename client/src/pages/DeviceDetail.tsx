@@ -181,6 +181,8 @@ export default function DeviceDetail() {
     try {
       await api.delete(`/api/devices/${d.id}`);
       queryClient.invalidateQueries({ queryKey: ['devices'] });
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
       toast.success('Equipo eliminado del inventario');
       navigate('/inventory');
     } catch (err: unknown) {
