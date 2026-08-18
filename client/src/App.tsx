@@ -20,6 +20,7 @@ const Budgets = lazyWithRetry(() => import('@/pages/Budgets'));
 const Users = lazyWithRetry(() => import('@/pages/Users'));
 const Settings = lazyWithRetry(() => import('@/pages/Settings'));
 const Audit = lazyWithRetry(() => import('@/pages/Audit'));
+const Trash = lazyWithRetry(() => import('@/pages/Trash'));
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -83,6 +84,14 @@ function AppRoutes() {
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="inventory" element={<Inventory />} />
         <Route path="inventory/:id" element={<DeviceDetail />} />
+        <Route
+          path="trash"
+          element={
+            <PermissionRoute permission="inventory.delete">
+              <Trash />
+            </PermissionRoute>
+          }
+        />
         <Route path="scan" element={<Scanner />} />
         <Route path="device/:id" element={<DeviceRedirect />} />
         <Route path="categories" element={<Categories />} />

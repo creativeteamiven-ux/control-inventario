@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { Wrench, Pencil, Plus, Download, Upload, CheckCircle, XCircle } from 'lucide-react';
+import { Wrench, Pencil, Plus, Download, Upload, CheckCircle, XCircle, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -168,7 +168,24 @@ export default function Maintenance() {
   });
 
   const items = data ?? [];
-  const { canViewCost } = usePermissions();
+  const { canViewCost, hasPermission } = usePermissions();
+  const canDelete = hasPermission('maintenance.delete');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDelete = async (m: MaintenanceItem) => {
+    if (!confirm(`¿Eliminar el mantenimiento de "${m.device?.name}"?`)) return;
+    setDeletingId(m.id);
+    try {
+      await api.delete(`/api/maintenance/${m.id}`);
+      queryClient.invalidateQueries({ queryKey: ['maintenance'] });
+      toast.success('Mantenimiento eliminado');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error al eliminar';
+      toast.error(msg);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const statusClass = (status: string) =>
     status === 'COMPLETED' ? 'bg-green-500/20 text-green-400' : status === 'IN_PROGRESS' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400';
@@ -277,6 +294,18 @@ export default function Maintenance() {
                     <Pencil className="h-4 w-4 mr-2" />
                     Editar
                   </Button>
+                  {canDelete && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full text-muted hover:text-destructive"
+                      onClick={() => handleDelete(m)}
+                      disabled={deletingId === m.id}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Eliminar
+                    </Button>
+                  )}
                 </div>
               ))
             )}
@@ -311,18 +340,32 @@ export default function Maintenance() {
                     <td className="py-3 px-4 text-sm">{format(new Date(m.startDate), 'dd MMM yyyy', { locale: es })}</td>
                     {canViewCost() && <td className="py-3 px-4">{m.cost ? `$${m.cost}` : '—'}</td>}
                     <td className="py-3 px-4">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted hover:text-primary"
-                        onClick={() => {
-                          setEditingItem(m);
-                          setEditOpen(true);
-                        }}
-                        title="Editar mantenimiento"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted hover:text-primary"
+                          onClick={() => {
+                            setEditingItem(m);
+                            setEditOpen(true);
+                          }}
+                          title="Editar mantenimiento"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        {canDelete && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted hover:text-destructive"
+                            onClick={() => handleDelete(m)}
+                            disabled={deletingId === m.id}
+                            title="Eliminar"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

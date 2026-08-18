@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { HandCoins, Plus, RotateCcw, AlertTriangle } from 'lucide-react';
+import { HandCoins, Plus, RotateCcw, AlertTriangle, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -27,6 +27,7 @@ const isOverdue = (l: Loan) => l.status === 'ACTIVE' && new Date(l.expectedRetur
 export default function Loans() {
   const [addOpen, setAddOpen] = useState(false);
   const [returningId, setReturningId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
@@ -57,6 +58,24 @@ export default function Loans() {
       toast.error(msg);
     } finally {
       setReturningId(null);
+    }
+  };
+
+  const handleDelete = async (id: string, name: string, status: string) => {
+    const extra = status === 'ACTIVE' ? ' El equipo volverá a operativo.' : '';
+    if (!confirm(`¿Eliminar el préstamo de "${name}"?${extra}`)) return;
+    setDeletingId(id);
+    try {
+      await api.delete(`/api/loans/${id}`);
+      await queryClient.invalidateQueries({ queryKey: ['loans'] });
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      toast.success('Préstamo eliminado');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error al eliminar';
+      toast.error(msg);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -138,21 +157,33 @@ export default function Loans() {
                     </td>
                     {canManage && (
                       <td className="py-3 px-4 text-right">
-                        {l.status === 'ACTIVE' ? (
+                        <div className="flex items-center justify-end gap-2">
+                          {l.status === 'ACTIVE' ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleReturn(l.id, l.device?.name ?? 'equipo')}
+                              disabled={returningId === l.id}
+                            >
+                              <RotateCcw className="h-4 w-4 mr-2" />
+                              {returningId === l.id ? 'Registrando...' : 'Marcar devuelto'}
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted">
+                              {l.returnDate ? `Devuelto ${format(new Date(l.returnDate), 'dd MMM yyyy', { locale: es })}` : '—'}
+                            </span>
+                          )}
                           <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleReturn(l.id, l.device?.name ?? 'equipo')}
-                            disabled={returningId === l.id}
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted hover:text-destructive"
+                            onClick={() => handleDelete(l.id, l.device?.name ?? 'equipo', l.status)}
+                            disabled={deletingId === l.id}
+                            title="Eliminar préstamo"
                           >
-                            <RotateCcw className="h-4 w-4 mr-2" />
-                            {returningId === l.id ? 'Registrando...' : 'Marcar devuelto'}
+                            <Trash2 className="h-4 w-4" />
                           </Button>
-                        ) : (
-                          <span className="text-xs text-muted">
-                            {l.returnDate ? `Devuelto ${format(new Date(l.returnDate), 'dd MMM yyyy', { locale: es })}` : '—'}
-                          </span>
-                        )}
+                        </div>
                       </td>
                     )}
                   </tr>

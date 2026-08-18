@@ -9,11 +9,6 @@ const deviceStatusEnum = z.enum([
   'ACTIVE', 'MAINTENANCE', 'DAMAGED', 'LOST', 'RETIRED', 'LOANED'
 ]);
 
-const deviceLocationEnum = z.enum([
-  'MAIN_AUDITORIUM', 'RECORDING_STUDIO', 'STORAGE_ROOM',
-  'YOUTH_ROOM', 'CHAPEL', 'ON_LOAN'
-]);
-
 export const createDeviceSchema = z.object({
   name: z.string().min(1, 'Nombre requerido'),
   brand: z.string().min(1, 'Marca requerida'),
@@ -21,7 +16,7 @@ export const createDeviceSchema = z.object({
   serialNumber: z.string().optional(),
   categoryId: z.string().min(1, 'Categoría requerida'),
   status: deviceStatusEnum.default('ACTIVE'),
-  location: deviceLocationEnum.default('STORAGE_ROOM'),
+  location: z.string().min(1, 'Ubicación requerida').default('STORAGE_ROOM'),
   purchaseDate: z.union([z.string(), z.date()]).optional(),
   purchasePrice: z.number().optional(),
   warrantyExpiry: z.union([z.string(), z.date()]).optional(),
@@ -36,7 +31,7 @@ export const updateDeviceSchema = createDeviceSchema.partial();
 export const deviceFilterSchema = z.object({
   categoryId: z.string().optional(),
   status: deviceStatusEnum.optional(),
-  location: deviceLocationEnum.optional(),
+  location: z.string().optional(),
   brand: z.string().optional(),
   search: z.string().optional(),
   conditionMin: z.number().min(0).max(100).optional(),

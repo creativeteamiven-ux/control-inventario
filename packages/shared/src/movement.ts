@@ -1,16 +1,12 @@
 import { z } from 'zod';
 
 const movementTypeEnum = z.enum(['CHECK_IN', 'CHECK_OUT', 'TRANSFER', 'STATUS_CHANGE']);
-const deviceLocationEnum = z.enum([
-  'MAIN_AUDITORIUM', 'RECORDING_STUDIO', 'STORAGE_ROOM',
-  'YOUTH_ROOM', 'CHAPEL', 'ON_LOAN',
-]);
 
 export const createMovementSchema = z.object({
   deviceId: z.string().min(1, 'Equipo requerido'),
   type: movementTypeEnum,
-  fromLocation: deviceLocationEnum.optional(),
-  toLocation: deviceLocationEnum.optional(),
+  fromLocation: z.string().optional(),
+  toLocation: z.string().optional(),
   reason: z.string().min(1, 'Razón requerida'),
 });
 

@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { usePermissions } from '@/hooks/usePermissions';
+import LocationSelect from '@/components/LocationSelect';
 
 const MAX_IMAGES = 5;
 
@@ -32,15 +33,6 @@ const STATUS_OPTIONS = [
   { value: 'LOST', label: 'Extraviado' },
   { value: 'RETIRED', label: 'Dado de baja' },
   { value: 'LOANED', label: 'En préstamo' },
-];
-
-const LOCATION_OPTIONS = [
-  { value: 'MAIN_AUDITORIUM', label: 'Auditorio principal' },
-  { value: 'RECORDING_STUDIO', label: 'Estudio de grabación' },
-  { value: 'STORAGE_ROOM', label: 'Cuarto de almacenamiento' },
-  { value: 'YOUTH_ROOM', label: 'Salón de jóvenes' },
-  { value: 'CHAPEL', label: 'Capilla' },
-  { value: 'ON_LOAN', label: 'En préstamo' },
 ];
 
 interface Device {
@@ -278,17 +270,10 @@ export default function EditDeviceModal({ open, onOpenChange, device }: EditDevi
             </div>
             <div>
               <label className="block text-sm font-medium mb-1.5">Ubicación</label>
-              <select
+              <LocationSelect
                 value={form.location}
-                onChange={(e) => setForm({ ...form, location: e.target.value })}
-                className="flex h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                {LOCATION_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(location) => setForm({ ...form, location })}
+              />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">

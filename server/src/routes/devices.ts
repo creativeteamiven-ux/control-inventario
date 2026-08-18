@@ -10,6 +10,7 @@ import { authenticate, AuthRequest, requirePermission } from '../middleware/auth
 import { stripCostFromResponse } from '../lib/permissions.js';
 import { writeAudit } from '../lib/audit.js';
 import { computeDepreciation } from '../lib/depreciation.js';
+import { assertLocationCode, ensureOnLoanCode } from '../lib/locations.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -184,6 +185,59 @@ router.get('/labels', async (req, res, next) => {
   }
 });
 
+/** Equipos dados de baja (papelera). */
+router.get('/trash', requirePermission('inventory.delete'), async (req, res, next) => {
+  try {
+    const devices = await prisma.device.findMany({
+      where: { deletedAt: { not: null } },
+      include: { category: { select: { id: true, name: true } }, images: { orderBy: { order: 'asc' }, take: 1 } },
+      orderBy: { deletedAt: 'desc' },
+      take: 200,
+    });
+    const perms = (req as AuthRequest).user?.permissions ?? [];
+    res.json({ devices: stripCostFromResponse(devices, perms), total: devices.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/:id/restore', requirePermission('inventory.delete'), async (req: AuthRequest, res, next) => {
+  try {
+    const existing = await prisma.device.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw new AppError(404, 'Equipo no encontrado');
+    if (!existing.deletedAt) throw new AppError(400, 'El equipo no está en la papelera');
+    const device = await prisma.device.update({
+      where: { id: req.params.id },
+      data: { deletedAt: null },
+    });
+    await writeAudit(req, 'Device', device.id, 'UPDATE', { restored: true });
+    res.json(device);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/:id/permanent', requirePermission('inventory.delete'), async (req: AuthRequest, res, next) => {
+  try {
+    const existing = await prisma.device.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw new AppError(404, 'Equipo no encontrado');
+    if (!existing.deletedAt) throw new AppError(400, 'Primero da de baja el equipo (papelera) para borrarlo del todo.');
+    await prisma.$transaction(async (tx) => {
+      await tx.movement.deleteMany({ where: { deviceId: existing.id } });
+      await tx.maintenance.deleteMany({ where: { deviceId: existing.id } });
+      await tx.loanRecord.deleteMany({ where: { deviceId: existing.id } });
+      await tx.deviceImage.deleteMany({ where: { deviceId: existing.id } });
+      await tx.document.deleteMany({ where: { deviceId: existing.id } });
+      await tx.expense.updateMany({ where: { deviceId: existing.id }, data: { deviceId: null } });
+      await tx.device.delete({ where: { id: existing.id } });
+    });
+    await writeAudit(req, 'Device', existing.id, 'DELETE', { permanent: true, name: existing.name });
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get('/:id', async (req, res, next) => {
   try {
     const device = await prisma.device.findFirst({
@@ -268,14 +322,10 @@ router.patch('/bulk', requirePermission('inventory.edit'), async (req: AuthReque
       update.status = status;
     }
     if (location != null) {
-      const validLocs = ['MAIN_AUDITORIUM', 'RECORDING_STUDIO', 'STORAGE_ROOM', 'YOUTH_ROOM', 'CHAPEL', 'ON_LOAN'];
-      if (!validLocs.includes(String(location))) {
-        throw new AppError(400, `Ubicación inválida. Use: ${validLocs.join(', ')}`);
-      }
-      update.location = location;
+      update.location = await assertLocationCode(prisma, String(location));
     }
     if (status === 'LOANED' && !(update as Record<string, string>).location) {
-      (update as Record<string, string>).location = 'ON_LOAN';
+      (update as Record<string, string>).location = await ensureOnLoanCode(prisma);
     }
     if (Object.keys(update).length === 0) {
       throw new AppError(400, 'Indique status y/o location para actualizar');
@@ -345,10 +395,12 @@ router.post('/', requirePermission('inventory.create'), async (req: AuthRequest,
     if (!parsed.success) throw new AppError(400, parsed.error.errors[0]?.message || 'Datos inválidos');
     const category = await prisma.category.findUnique({ where: { id: parsed.data.categoryId } });
     if (!category) throw new AppError(400, 'Categoría no encontrada');
+    const location = await assertLocationCode(prisma, parsed.data.location);
     const prefix = category.slug.split('-')[0].toUpperCase().slice(0, 3) || 'EQP';
     const internalCode = await getNextInternalCode(prefix);
     const data = {
       ...parsed.data,
+      location,
       purchaseDate: parsed.data.purchaseDate ? new Date(parsed.data.purchaseDate as string) : null,
       warrantyExpiry: parsed.data.warrantyExpiry ? new Date(parsed.data.warrantyExpiry as string) : null,
       purchasePrice: parsed.data.purchasePrice ?? null,
@@ -371,6 +423,7 @@ router.patch('/:id', requirePermission('inventory.edit'), async (req: AuthReques
     const parsed = updateDeviceSchema.safeParse(req.body);
     if (!parsed.success) throw new AppError(400, parsed.error.errors[0]?.message || 'Datos inválidos');
     const update: Record<string, unknown> = { ...parsed.data };
+    if (parsed.data.location) update.location = await assertLocationCode(prisma, parsed.data.location);
     if (parsed.data.purchaseDate != null) update.purchaseDate = new Date(parsed.data.purchaseDate as string);
     if (parsed.data.warrantyExpiry != null) update.warrantyExpiry = new Date(parsed.data.warrantyExpiry as string);
     const device = await prisma.device.update({

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { ArrowLeftRight, Download, Upload, Plus, CheckCircle, XCircle } from 'lucide-react';
+import { ArrowLeftRight, Download, Upload, Plus, CheckCircle, XCircle, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
@@ -10,8 +10,9 @@ import { es } from 'date-fns/locale';
 import TransferCart, { type CartDevice } from '@/components/TransferCart';
 import DevicePickerModal from '@/components/DevicePickerModal';
 import { getStoredCart, clearStoredCart, setStoredCart } from '@/lib/transferCart';
-import { DEVICE_LOCATION_LABELS } from '@/lib/statusLabels';
 import { Input } from '@/components/ui/input';
+import { useLocations } from '@/hooks/useLocations';
+import { usePermissions } from '@/hooks/usePermissions';
 
 type ValidationRow = { row: number; valid: boolean; errors: string[]; corrections: { field: string; from: string; to: string }[] };
 type ValidateResult = { headerErrors?: string; totalRows: number; validCount: number; invalidCount: number; rows: ValidationRow[] };
@@ -23,6 +24,10 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
 };
 
 export default function Movements() {
+  const { label: locationLabel } = useLocations();
+  const { hasPermission } = usePermissions();
+  const canManage = hasPermission('movements.create');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [cart, setCart] = useState<CartDevice[]>(() => getStoredCart());
@@ -173,6 +178,21 @@ export default function Movements() {
   const locations = (locationsData ?? []) as { code: string; name: string; sortOrder: number }[];
 
   const items = data?.items ?? [];
+
+  const handleDeleteMovement = async (id: string, name: string) => {
+    if (!confirm(`¿Eliminar el movimiento de "${name}"? No cambia la ubicación actual del equipo.`)) return;
+    setDeletingId(id);
+    try {
+      await api.delete(`/api/movements/${id}`);
+      queryClient.invalidateQueries({ queryKey: ['movements'] });
+      toast.success('Movimiento eliminado');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error al eliminar';
+      toast.error(msg);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
@@ -350,7 +370,7 @@ export default function Movements() {
                       r.corrections
                         .map((c, j) => ({ row: r.row, j, c }))
                         .filter(({ c }) => {
-                          const displayTo = c.field === 'Tipo' ? (MOVEMENT_TYPE_LABELS[c.to] ?? c.to) : (DEVICE_LOCATION_LABELS[c.to] ?? c.to);
+                          const displayTo = c.field === 'Tipo' ? (MOVEMENT_TYPE_LABELS[c.to] ?? c.to) : (locationLabel(c.to) || c.to);
                           return c.from.trim().toLowerCase() !== displayTo.trim().toLowerCase();
                         })
                     );
@@ -362,7 +382,7 @@ export default function Movements() {
                             <li key={`${row}-${j}`} className="flex gap-2 py-1.5 px-2 rounded bg-primary/10 border border-primary/30">
                               <span className="font-mono text-primary shrink-0">Fila {row}</span>
                               <span className="text-foreground">
-                                {c.field}: &quot;{c.from}&quot; → {c.field === 'Tipo' ? (MOVEMENT_TYPE_LABELS[c.to] ?? c.to) : (DEVICE_LOCATION_LABELS[c.to] ?? c.to)}
+                                {c.field}: &quot;{c.from}&quot; → {c.field === 'Tipo' ? (MOVEMENT_TYPE_LABELS[c.to] ?? c.to) : (locationLabel(c.to) || c.to)}
                               </span>
                             </li>
                           ))}
@@ -460,6 +480,18 @@ export default function Movements() {
                       </dd>
                     </div>
                   </dl>
+                  {canManage && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full text-muted hover:text-destructive"
+                      onClick={() => handleDeleteMovement(m.id, m.device?.name ?? 'equipo')}
+                      disabled={deletingId === m.id}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Eliminar
+                    </Button>
+                  )}
                 </div>
               ))
             )}
@@ -475,6 +507,7 @@ export default function Movements() {
                   <th className="text-left py-4 px-4 font-medium text-muted">Razón</th>
                   <th className="text-left py-4 px-4 font-medium text-muted">Usuario</th>
                   <th className="text-left py-4 px-4 font-medium text-muted">Fecha</th>
+                  {canManage && <th className="w-12"></th>}
                 </tr>
               </thead>
               <tbody>
@@ -485,6 +518,20 @@ export default function Movements() {
                     <td className="py-3 px-4">{m.reason}</td>
                     <td className="py-3 px-4 text-sm">{m.user?.name}</td>
                     <td className="py-3 px-4 text-sm text-muted">{format(new Date(m.createdAt), 'dd MMM yyyy HH:mm', { locale: es })}</td>
+                    {canManage && (
+                      <td className="py-3 px-4">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted hover:text-destructive"
+                          onClick={() => handleDeleteMovement(m.id, m.device?.name ?? 'equipo')}
+                          disabled={deletingId === m.id}
+                          title="Eliminar movimiento"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { createMovementSchema } from '@soundvault/shared';
-import type { DeviceLocation, MovementType } from '@prisma/client';
+import type { MovementType } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
+import { assertLocationCode } from '../lib/locations.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -37,8 +38,12 @@ router.post('/', requirePermission('movements.create'), async (req: AuthRequest,
         results.errors.push({ deviceId: parsed.data.deviceId, message: 'Equipo no encontrado' });
         continue;
       }
-      const fromLocation: DeviceLocation = parsed.data.fromLocation ?? device.location;
-      const toLocation: DeviceLocation = parsed.data.toLocation ?? fromLocation;
+      const fromLocation = parsed.data.fromLocation
+        ? await assertLocationCode(prisma, parsed.data.fromLocation)
+        : device.location;
+      const toLocation = parsed.data.toLocation
+        ? await assertLocationCode(prisma, parsed.data.toLocation)
+        : fromLocation;
 
       try {
         await prisma.$transaction([
@@ -101,6 +106,18 @@ router.get('/', async (req, res, next) => {
       prisma.movement.count({ where }),
     ]);
     res.json({ items, total, page, limit });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/:id', requirePermission('movements.create'), async (req: AuthRequest, res, next) => {
+  try {
+    const existing = await prisma.movement.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw new AppError(404, 'Movimiento no encontrado');
+    await prisma.movement.delete({ where: { id: req.params.id } });
+    await writeAudit(req, 'Movement', existing.id, 'DELETE', { deviceId: existing.deviceId, type: existing.type });
+    res.json({ ok: true });
   } catch (e) {
     next(e);
   }

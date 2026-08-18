@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { canViewCost } from '../lib/permissions.js';
+import { locationNameMap } from '../lib/locations.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -38,17 +39,10 @@ router.get('/stats', async (req, res, next) => {
       prisma.loanRecord.count({ where: { status: 'ACTIVE', expectedReturn: { lt: new Date() } } }),
     ]);
 
-    const LOCATION_LABELS: Record<string, string> = {
-      MAIN_AUDITORIUM: 'Auditorio principal',
-      RECORDING_STUDIO: 'Estudio de grabación',
-      STORAGE_ROOM: 'Cuarto de almacenamiento',
-      YOUTH_ROOM: 'Salón de jóvenes',
-      CHAPEL: 'Capilla',
-      ON_LOAN: 'En préstamo',
-    };
+    const locNames = await locationNameMap(prisma);
     const locationStats = byLocation.map((l) => ({
       location: l.location,
-      name: LOCATION_LABELS[l.location] ?? String(l.location).replace(/_/g, ' '),
+      name: locNames[l.location] ?? String(l.location).replace(/_/g, ' '),
       count: l._count,
     }));
 

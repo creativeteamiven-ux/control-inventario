@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Package, Grid3X3, List, Plus, Search, Download, Upload, Truck, FolderTree, AlertCircle, CheckCircle, XCircle, MapPin, SlidersHorizontal, QrCode } from 'lucide-react';
+import { Package, Grid3X3, List, Plus, Search, Download, Upload, Truck, FolderTree, AlertCircle, CheckCircle, XCircle, MapPin, SlidersHorizontal, QrCode, Trash2 } from 'lucide-react';
 import { addToStoredCart, addManyToStoredCart, getStoredCart } from '@/lib/transferCart';
 import { api } from '@/lib/api';
 import AddDeviceModal from '@/components/AddDeviceModal';
@@ -10,7 +10,9 @@ import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { deviceStatusLabel, deviceLocationLabel, DEVICE_STATUS_LABELS, DEVICE_LOCATION_LABELS } from '@/lib/statusLabels';
+import { deviceStatusLabel, DEVICE_STATUS_LABELS } from '@/lib/statusLabels';
+import { useLocations } from '@/hooks/useLocations';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const STATUS_BADGE: Record<string, string> = {
   ACTIVE: 'bg-green-500/20 text-green-400',
@@ -22,6 +24,9 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 export default function Inventory() {
+  const { locations, label: locationLabel } = useLocations();
+  const { hasPermission } = usePermissions();
+  const canDelete = hasPermission('inventory.delete');
   const [view, setView] = useState<'table' | 'grid'>('table');
   const [inTransferCart, setInTransferCart] = useState<Set<string>>(
     () => new Set(getStoredCart().map((x) => x.id))
@@ -402,20 +407,20 @@ export default function Inventory() {
               >
                 Todos los lugares
               </button>
-              {Object.entries(DEVICE_LOCATION_LABELS).map(([value, label]) => (
+              {locations.map((loc) => (
                 <button
-                  key={value}
-                  onClick={() => { setLocationFilter(value); setPage(1); }}
+                  key={loc.code}
+                  onClick={() => { setLocationFilter(loc.code); setPage(1); }}
                   className={cn(
                     'w-full text-left pl-3 pr-2 py-2 rounded-lg text-sm transition-all flex items-center gap-2 border-l-2',
-                    locationFilter === value
+                    locationFilter === loc.code
                       ? 'bg-primary/15 text-primary font-medium border-primary'
                       : 'border-transparent text-muted hover:bg-card-hover hover:text-foreground'
                   )}
-                  title={label}
+                  title={loc.name}
                 >
-                  <MapPin className={cn('h-3.5 w-3.5 shrink-0', locationFilter === value ? 'text-primary' : 'text-muted/60')} />
-                  <span className="truncate">{label}</span>
+                  <MapPin className={cn('h-3.5 w-3.5 shrink-0', locationFilter === loc.code ? 'text-primary' : 'text-muted/60')} />
+                  <span className="truncate">{loc.name}</span>
                 </button>
               ))}
             </nav>
@@ -451,8 +456,8 @@ export default function Inventory() {
               title="Filtrar por lugar"
             >
               <option value="">Todos los lugares</option>
-              {Object.entries(DEVICE_LOCATION_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
+              {locations.map((loc) => (
+                <option key={loc.code} value={loc.code}>{loc.name}</option>
               ))}
             </select>
           </div>
@@ -528,6 +533,14 @@ export default function Inventory() {
               {importing ? 'Importando...' : 'Importar'}
             </Button>
           </div>
+          {canDelete && (
+            <Link to="/trash">
+              <Button variant="outline">
+                <Trash2 className="h-4 w-4 mr-2" />
+                Papelera
+              </Button>
+            </Link>
+          )}
           <Button onClick={() => setAddModalOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Agregar equipo
@@ -631,7 +644,7 @@ export default function Inventory() {
                             <li key={`${r.row}-${j}`} className="flex gap-2 py-1.5 px-2 rounded bg-primary/10 border border-primary/30">
                               <span className="font-mono text-primary shrink-0">Fila {r.row}</span>
                               <span className="text-foreground">
-                                {c.field}: &quot;{c.from}&quot; → {(c.field === 'Estado' ? deviceStatusLabel(c.to) : (DEVICE_LOCATION_LABELS[c.to] ?? c.to))}
+                                {c.field}: &quot;{c.from}&quot; → {(c.field === 'Estado' ? deviceStatusLabel(c.to) : (locationLabel(c.to) || c.to))}
                               </span>
                             </li>
                           ))
@@ -853,7 +866,7 @@ export default function Inventory() {
                         )}
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-sm text-muted">{deviceLocationLabel(d.location)}</td>
+                    <td className="py-3 px-4 text-sm text-muted">{locationLabel(d.location)}</td>
                     <td className="py-3 px-4">
                       <div className="w-20 h-2 bg-card-hover rounded-full overflow-hidden">
                         <div
@@ -964,7 +977,7 @@ export default function Inventory() {
 
       {!isLoading && devices.length === 0 && (
         <div className="bg-card rounded-xl border border-border p-12 text-center text-muted">
-          No hay equipos que coincidan con la búsqueda{needsReview ? ' (ninguno operativo con observación)' : statusFilter ? ` con estado "${deviceStatusLabel(statusFilter)}"` : categoryId ? ' en esta categoría' : ''}{locationFilter ? ` en "${deviceLocationLabel(locationFilter)}"` : ''}.
+          No hay equipos que coincidan con la búsqueda{needsReview ? ' (ninguno operativo con observación)' : statusFilter ? ` con estado "${deviceStatusLabel(statusFilter)}"` : categoryId ? ' en esta categoría' : ''}{locationFilter ? ` en "${locationLabel(locationFilter)}"` : ''}.
         </div>
       )}
       </div>

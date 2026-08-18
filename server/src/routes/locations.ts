@@ -3,7 +3,6 @@ import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { writeAudit } from '../lib/audit.js';
-import type { DeviceLocation } from '@prisma/client';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -19,7 +18,7 @@ const DEFAULT_LOCATIONS = [
 
 router.use(authenticate);
 
-/** Listar todos los lugares (para dropdowns y módulo Lugares). Si no hay ninguno, crea los por defecto. */
+/** Listar todos los lugares. Si no hay ninguno, crea los por defecto. */
 router.get('/', async (_req, res, next) => {
   try {
     let list = await prisma.location.findMany({ orderBy: { sortOrder: 'asc' } });
@@ -35,7 +34,6 @@ router.get('/', async (_req, res, next) => {
   }
 });
 
-/** Crear un nuevo lugar (solo ADMIN/MANAGER). code se genera del nombre si no se envía. */
 router.post('/', requireRole('ADMIN', 'MANAGER'), async (req, res, next) => {
   try {
     const body = req.body as { name: string; code?: string; sortOrder?: number };
@@ -58,7 +56,6 @@ router.post('/', requireRole('ADMIN', 'MANAGER'), async (req, res, next) => {
   }
 });
 
-/** Actualizar nombre y/o orden de un lugar (solo ADMIN/MANAGER) */
 router.patch('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -78,27 +75,16 @@ router.patch('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res, next) => 
   }
 });
 
-/** Eliminar un lugar (solo ADMIN/MANAGER). Bloquea si hay equipos activos ahí. */
 router.delete('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res, next) => {
   try {
     const existing = await prisma.location.findUnique({ where: { id: req.params.id } });
     if (!existing) throw new AppError(404, 'Lugar no encontrado');
 
-    const knownLocations: DeviceLocation[] = [
-      'MAIN_AUDITORIUM',
-      'RECORDING_STUDIO',
-      'STORAGE_ROOM',
-      'YOUTH_ROOM',
-      'CHAPEL',
-      'ON_LOAN',
-    ];
-    if (knownLocations.includes(existing.code as DeviceLocation)) {
-      const active = await prisma.device.count({
-        where: { location: existing.code as DeviceLocation, deletedAt: null },
-      });
-      if (active > 0) {
-        throw new AppError(400, `No se puede eliminar: hay ${active} equipo(s) activo(s) en este lugar.`);
-      }
+    const active = await prisma.device.count({
+      where: { location: existing.code, deletedAt: null },
+    });
+    if (active > 0) {
+      throw new AppError(400, `No se puede eliminar: hay ${active} equipo(s) activo(s) en este lugar.`);
     }
 
     await prisma.location.delete({ where: { id: req.params.id } });

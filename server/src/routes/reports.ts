@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { stripCostFromResponse } from '../lib/permissions.js';
 import { computeDepreciation } from '../lib/depreciation.js';
+import { locationNameMap } from '../lib/locations.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -27,7 +28,8 @@ const LOCATION_LABELS: Record<string, string> = {
   ON_LOAN: 'En préstamo',
 };
 
-const locLabel = (v?: string | null) => (v ? LOCATION_LABELS[v] ?? String(v).replace(/_/g, ' ') : '—');
+const locLabel = (v: string | null | undefined, names: Record<string, string>) =>
+  v ? names[v] ?? LOCATION_LABELS[v] ?? String(v).replace(/_/g, ' ') : '—';
 const typeLabel = (v: string) => MOVEMENT_TYPE_LABELS[v] ?? v;
 
 /** Construye un rango de fechas (createdAt) a partir de from/to (YYYY-MM-DD). */
@@ -70,6 +72,7 @@ const fmtDateTime = (d: Date) =>
 router.get('/movements/export', requirePermission('reports.export'), async (req, res, next) => {
   try {
     const where = buildMovementWhere(req.query as Record<string, unknown>);
+    const names = await locationNameMap(prisma);
     const movements = await prisma.movement.findMany({
       where,
       include: {
@@ -85,8 +88,8 @@ router.get('/movements/export', requirePermission('reports.export'), async (req,
       Equipo: m.device?.name ?? '',
       'Marca/Modelo': [m.device?.brand, m.device?.model].filter(Boolean).join(' '),
       Tipo: typeLabel(m.type),
-      Desde: locLabel(m.fromLocation),
-      Hacia: locLabel(m.toLocation),
+      Desde: locLabel(m.fromLocation, names),
+      Hacia: locLabel(m.toLocation, names),
       'Razón/Motivo': m.reason,
       'Realizado por': m.user?.name ?? '',
       'Correo': m.user?.email ?? '',
@@ -111,6 +114,7 @@ router.get('/movements/pdf', requirePermission('reports.export'), async (req, re
     const where = buildMovementWhere(req.query as Record<string, unknown>);
     const from = req.query.from as string | undefined;
     const to = req.query.to as string | undefined;
+    const names = await locationNameMap(prisma);
     const movements = await prisma.movement.findMany({
       where,
       include: {
@@ -165,8 +169,8 @@ router.get('/movements/pdf', requirePermission('reports.export'), async (req, re
         m.device?.internalCode ?? '',
         m.device?.name ?? '',
         typeLabel(m.type),
-        locLabel(m.fromLocation),
-        locLabel(m.toLocation),
+        locLabel(m.fromLocation, names),
+        locLabel(m.toLocation, names),
         m.user?.name ?? '',
       ];
       let x = 45;
@@ -302,6 +306,7 @@ router.get('/inventory/export', requirePermission('reports.export'), async (req:
       include: { category: { select: { name: true } } },
       orderBy: [{ category: { name: 'asc' } }, { internalCode: 'asc' }],
     });
+    const names = await locationNameMap(prisma);
     const perms = req.user?.permissions ?? [];
     const showCost = perms.includes('sensitive.view_cost');
 
@@ -314,7 +319,7 @@ router.get('/inventory/export', requirePermission('reports.export'), async (req:
         'Número de serie': d.serialNumber ?? '',
         Categoría: d.category?.name ?? '',
         Estado: d.status,
-        Ubicación: locLabel(d.location),
+        Ubicación: locLabel(d.location, names),
         'Condición (%)': d.condition,
         Proveedor: d.supplier ?? '',
         Observación: d.observation ?? '',

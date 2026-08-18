@@ -27,7 +27,6 @@ function getNextInternalCode(prefix: string): Promise<string> {
 }
 
 type DeviceStatus = 'ACTIVE' | 'MAINTENANCE' | 'DAMAGED' | 'LOST' | 'RETIRED' | 'LOANED';
-type DeviceLocation = 'MAIN_AUDITORIUM' | 'RECORDING_STUDIO' | 'STORAGE_ROOM' | 'YOUTH_ROOM' | 'CHAPEL' | 'ON_LOAN';
 
 const STATUS_MAP: Record<string, DeviceStatus> = {
   ACTIVE: 'ACTIVE',
@@ -53,7 +52,7 @@ const STATUS_MAP: Record<string, DeviceStatus> = {
   BAJA: 'RETIRED',
 };
 
-const LOCATION_MAP: Record<string, DeviceLocation> = {
+const LOCATION_MAP: Record<string, string> = {
   MAIN_AUDITORIUM: 'MAIN_AUDITORIUM',
   AUDITORIO_PRINCIPAL: 'MAIN_AUDITORIUM',
   AUDITORIO: 'MAIN_AUDITORIUM',
@@ -78,10 +77,14 @@ function normalizeStatus(raw: string): DeviceStatus {
   return STATUS_MAP[key] ?? STATUS_MAP[keyNoAccent] ?? STATUS_MAP[r] ?? 'ACTIVE';
 }
 
-function normalizeLocation(raw: string): DeviceLocation {
+function normalizeLocation(raw: string, knownCodes?: Set<string>): string {
   const r = raw.trim();
   const key = r.toUpperCase().replace(/\s+/g, '_').replace(/Ó/g, 'O').replace(/Í/g, 'I').replace(/É/g, 'E');
-  return LOCATION_MAP[key] ?? LOCATION_MAP[r.toUpperCase().replace(/\s/g, '_')] ?? 'STORAGE_ROOM';
+  const codes = knownCodes && knownCodes.size > 0 ? knownCodes : new Set(Object.values(LOCATION_MAP));
+  const aliased = LOCATION_MAP[key] ?? LOCATION_MAP[r.toUpperCase().replace(/\s/g, '_')];
+  if (aliased && codes.has(aliased)) return aliased;
+  if (codes.has(key)) return key;
+  return codes.has('STORAGE_ROOM') ? 'STORAGE_ROOM' : [...codes][0] ?? 'STORAGE_ROOM';
 }
 
 export type ValidationRow = {
@@ -355,13 +358,13 @@ function validateMovementRows(
     }
     const deviceLoc = device?.location ?? 'STORAGE_ROOM';
     const rawFrom = fromIdx >= 0 && row[fromIdx] ? String(row[fromIdx]).trim() : '';
-    const fromLoc = rawFrom ? normalizeLocation(rawFrom) : (deviceLoc as DeviceLocation);
+    const fromLoc = rawFrom ? normalizeLocation(rawFrom) : deviceLoc;
     const rawFromNorm = rawFrom.toUpperCase().replace(/\s+/g, '_').replace(/Ó/g, 'O').replace(/Í/g, 'I').replace(/É/g, 'E');
     if (rawFrom && rawFromNorm !== fromLoc) {
       corrections.push({ field: 'Desde', from: rawFrom, to: fromLoc });
     }
     const rawTo = toIdx >= 0 && row[toIdx] ? String(row[toIdx]).trim() : '';
-    const toLoc = rawTo ? normalizeLocation(rawTo) : (deviceLoc as DeviceLocation);
+    const toLoc = rawTo ? normalizeLocation(rawTo) : deviceLoc;
     const rawToNorm = rawTo.toUpperCase().replace(/\s+/g, '_').replace(/Ó/g, 'O').replace(/Í/g, 'I').replace(/É/g, 'E');
     if (rawTo && rawToNorm !== toLoc) {
       corrections.push({ field: 'Hasta', from: rawTo, to: toLoc });
@@ -452,8 +455,8 @@ router.post('/movements', requirePermission('movements.create'), upload.single('
       const type = normalizeMovementType(rawType || 'TRANSFER');
       const fromLocRaw = fromIdx >= 0 && row[fromIdx] ? String(row[fromIdx]).trim() : '';
       const toLocRaw = toIdx >= 0 && row[toIdx] ? String(row[toIdx]).trim() : '';
-      const fromLoc = fromLocRaw ? normalizeLocation(fromLocRaw) : (device.location as DeviceLocation);
-      const toLoc = toLocRaw ? normalizeLocation(toLocRaw) : (device.location as DeviceLocation);
+      const fromLoc = fromLocRaw ? normalizeLocation(fromLocRaw) : device.location;
+      const toLoc = toLocRaw ? normalizeLocation(toLocRaw) : device.location;
 
       let moveUserId = defaultUserId;
       if (respIdx >= 0 && row[respIdx]) {

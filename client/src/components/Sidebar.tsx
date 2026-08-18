@@ -15,6 +15,7 @@ import {
   Users,
   Settings,
   ShieldCheck,
+  Trash2,
   ChevronLeft,
   ChevronRight,
   X,
@@ -27,6 +28,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 const navItems: { to: string; icon: typeof LayoutDashboard; label: string; perm?: string; roles?: string[] }[] = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/inventory', icon: Package, label: 'Inventario' },
+  { to: '/trash', icon: Trash2, label: 'Papelera', perm: 'inventory.delete' },
   { to: '/scan', icon: ScanLine, label: 'Escanear' },
   { to: '/categories', icon: FolderTree, label: 'Categorías' },
   { to: '/locations', icon: MapPin, label: 'Lugares' },

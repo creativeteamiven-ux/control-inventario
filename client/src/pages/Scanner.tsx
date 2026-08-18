@@ -23,9 +23,10 @@ import { api } from '@/lib/api';
 import { addToStoredCart, getStoredCart } from '@/lib/transferCart';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { deviceStatusLabel, deviceLocationLabel } from '@/lib/statusLabels';
+import { deviceStatusLabel } from '@/lib/statusLabels';
 import { useAuth } from '@/hooks/useAuth';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useLocations } from '@/hooks/useLocations';
 
 const READER_ID = 'qr-reader';
 
@@ -77,6 +78,7 @@ export default function Scanner() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { hasPermission } = usePermissions();
+  const { label: locationLabel } = useLocations();
   const canEdit = (user?.role === 'ADMIN' || user?.role === 'MANAGER') && hasPermission('inventory.edit');
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -369,7 +371,7 @@ export default function Scanner() {
             </div>
             <div className="bg-card p-3">
               <dt className="text-xs text-muted">Ubicación</dt>
-              <dd className="text-sm font-medium truncate">{deviceLocationLabel(device.location)}</dd>
+              <dd className="text-sm font-medium truncate">{locationLabel(device.location)}</dd>
             </div>
             <div className="bg-card p-3 col-span-2">
               <dt className="text-xs text-muted">Condición</dt>

@@ -7,8 +7,9 @@ import EditDeviceModal from '@/components/EditDeviceModal';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { deviceStatusLabel, deviceLocationLabel } from '@/lib/statusLabels';
+import { deviceStatusLabel } from '@/lib/statusLabels';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useLocations } from '@/hooks/useLocations';
 import { formatMoney } from '@/lib/expenseLabels';
 
 interface Financials {
@@ -40,6 +41,7 @@ export default function DeviceDetail() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { canViewCost, hasPermission } = usePermissions();
+  const { label: locationLabel } = useLocations();
   const [editOpen, setEditOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
@@ -176,14 +178,15 @@ export default function DeviceDetail() {
   };
 
   const handleDelete = async () => {
-    if (!confirm(`¿Eliminar el equipo "${d.name}" (${d.internalCode}) del inventario?\n\nSe quitará del listado. Esta acción no se puede deshacer desde la aplicación.`)) return;
+    if (!confirm(`¿Dar de baja "${d.name}" (${d.internalCode})?\n\nPasará a la papelera y podrás restaurarlo después.`)) return;
     setDeleting(true);
     try {
       await api.delete(`/api/devices/${d.id}`);
       queryClient.invalidateQueries({ queryKey: ['devices'] });
+      queryClient.invalidateQueries({ queryKey: ['devices-trash'] });
       queryClient.invalidateQueries({ queryKey: ['categories'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-      toast.success('Equipo eliminado del inventario');
+      toast.success('Equipo enviado a la papelera');
       navigate('/inventory');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error al eliminar el equipo';
@@ -399,7 +402,7 @@ export default function DeviceDetail() {
               </div>
               <div>
                 <dt className="text-sm text-muted">Ubicación</dt>
-                <dd>{deviceLocationLabel(d.location)}</dd>
+                <dd>{locationLabel(d.location)}</dd>
               </div>
               <div>
                 <dt className="text-sm text-muted">Condición</dt>

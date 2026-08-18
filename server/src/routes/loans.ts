@@ -4,6 +4,7 @@ import { createLoanSchema, returnLoanSchema } from '@soundvault/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
+import { defaultStorageCode, ensureOnLoanCode } from '../lib/locations.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -50,6 +51,7 @@ router.post('/', requirePermission('loans.create'), async (req: AuthRequest, res
     });
     if (!device) throw new AppError(404, 'Equipo no encontrado');
     if (device.status === 'LOANED') throw new AppError(400, 'El equipo ya está en préstamo');
+    const onLoanCode = await ensureOnLoanCode(prisma);
     const item = await prisma.$transaction(async (tx) => {
       const loan = await tx.loanRecord.create({
         data: {
@@ -63,7 +65,7 @@ router.post('/', requirePermission('loans.create'), async (req: AuthRequest, res
       });
       await tx.device.update({
         where: { id: device.id },
-        data: { status: 'LOANED', location: 'ON_LOAN' },
+        data: { status: 'LOANED', location: onLoanCode },
       });
       return loan;
     });
@@ -86,6 +88,7 @@ router.post('/:id/return', requirePermission('loans.create'), async (req: AuthRe
     });
     if (!loan) throw new AppError(404, 'Préstamo no encontrado');
     if (loan.status === 'RETURNED') throw new AppError(400, 'El préstamo ya fue devuelto');
+    const storageCode = await defaultStorageCode(prisma);
     await prisma.$transaction(async (tx) => {
       await tx.loanRecord.update({
         where: { id: loan.id },
@@ -93,7 +96,7 @@ router.post('/:id/return', requirePermission('loans.create'), async (req: AuthRe
       });
       await tx.device.update({
         where: { id: loan.deviceId },
-        data: { status: 'ACTIVE', location: 'STORAGE_ROOM' },
+        data: { status: 'ACTIVE', location: storageCode },
       });
     });
     const updated = await prisma.loanRecord.findUnique({
@@ -102,6 +105,27 @@ router.post('/:id/return', requirePermission('loans.create'), async (req: AuthRe
     });
     await writeAudit(req, 'LoanRecord', loan.id, 'RETURN', { returnDate });
     res.json(updated);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.delete('/:id', requirePermission('loans.create'), async (req: AuthRequest, res, next) => {
+  try {
+    const loan = await prisma.loanRecord.findUnique({ where: { id: req.params.id } });
+    if (!loan) throw new AppError(404, 'Préstamo no encontrado');
+    const storageCode = await defaultStorageCode(prisma);
+    await prisma.$transaction(async (tx) => {
+      await tx.loanRecord.delete({ where: { id: loan.id } });
+      if (loan.status === 'ACTIVE') {
+        await tx.device.update({
+          where: { id: loan.deviceId },
+          data: { status: 'ACTIVE', location: storageCode },
+        });
+      }
+    });
+    await writeAudit(req, 'LoanRecord', loan.id, 'DELETE', { deviceId: loan.deviceId, borrowerName: loan.borrowerName });
+    res.json({ ok: true });
   } catch (e) {
     next(e);
   }
