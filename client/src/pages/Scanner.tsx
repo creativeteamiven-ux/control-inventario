@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import {
@@ -17,16 +17,21 @@ import {
   SwitchCamera,
   ShoppingCart,
   Check,
+  CalendarDays,
+  ListPlus,
+  ExternalLink,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
 import { addToStoredCart, getStoredCart } from '@/lib/transferCart';
+import { getBuildEventId, setBuildEventId } from '@/lib/eventBuild';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { deviceStatusLabel } from '@/lib/statusLabels';
 import { useAuth } from '@/hooks/useAuth';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useLocations } from '@/hooks/useLocations';
+import BarcodeScanner from '@/components/BarcodeScanner';
 
 const READER_ID = 'barcode-reader';
 
@@ -90,13 +95,113 @@ interface ScannedDevice {
   images?: { url: string }[];
 }
 
+interface DraftEvent {
+  id: string;
+  name: string;
+  stats: { total: number };
+}
+
+interface AddScanResult {
+  success: boolean;
+  code: string;
+  message: string;
+  device?: { id: string; name: string; internalCode: string };
+  total?: number;
+}
+
+type ScanMode = 'lookup' | 'event';
+
 export default function Scanner() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { hasPermission } = usePermissions();
   const { label: locationLabel } = useLocations();
   const canEdit = (user?.role === 'ADMIN' || user?.role === 'MANAGER') && hasPermission('inventory.edit');
+  const canEvent = hasPermission('events.manage') || hasPermission('events.scan');
+
+  const initialMode: ScanMode = searchParams.get('mode') === 'event' && canEvent ? 'event' : 'lookup';
+  const [mode, setMode] = useState<ScanMode>(initialMode);
+  const [eventBuildId, setEventBuildIdState] = useState<string | null>(
+    () => getBuildEventId() || searchParams.get('eventId')
+  );
+  const [eventScanActive, setEventScanActive] = useState(true);
+  const [lastEventAdd, setLastEventAdd] = useState<AddScanResult | null>(null);
+  const [addingToEvent, setAddingToEvent] = useState(false);
+  const [selectedEventForDevice, setSelectedEventForDevice] = useState<string>('');
+
+  const { data: draftEvents = [] } = useQuery({
+    queryKey: ['events', 'DRAFT'],
+    queryFn: async () => {
+      const { data } = await api.get<DraftEvent[]>('/api/events', { params: { status: 'DRAFT' } });
+      return data;
+    },
+    enabled: canEvent,
+  });
+
+  const activeEvent = draftEvents.find((e) => e.id === eventBuildId);
+
+  useEffect(() => {
+    setBuildEventId(eventBuildId);
+  }, [eventBuildId]);
+
+  useEffect(() => {
+    if (eventBuildId && !draftEvents.some((e) => e.id === eventBuildId) && draftEvents.length) {
+      setEventBuildIdState(draftEvents[0].id);
+    }
+  }, [draftEvents, eventBuildId]);
+
+  useEffect(() => {
+    if (!selectedEventForDevice && draftEvents.length) {
+      setSelectedEventForDevice(eventBuildId || draftEvents[0].id);
+    }
+  }, [draftEvents, eventBuildId, selectedEventForDevice]);
+
+  const handleEventAddScan = useCallback(
+    async (code: string) => {
+      if (!eventBuildId) {
+        toast.error('Selecciona un evento en borrador');
+        return;
+      }
+      try {
+        const { data } = await api.post<AddScanResult>(`/api/events/${eventBuildId}/add-by-scan`, { code });
+        setLastEventAdd(data);
+        if (data.success) {
+          toast.success(data.message, { duration: 1500 });
+          await queryClient.invalidateQueries({ queryKey: ['events'] });
+          await queryClient.invalidateQueries({ queryKey: ['event', eventBuildId] });
+        } else {
+          toast.error(data.message);
+        }
+      } catch (err: unknown) {
+        const res = (err as { response?: { data?: AddScanResult } })?.response?.data;
+        toast.error(res?.message || 'No se pudo agregar el equipo');
+      }
+    },
+    [eventBuildId, queryClient]
+  );
+
+  const addDeviceToEvent = async (eventId: string) => {
+    if (!device) return;
+    setAddingToEvent(true);
+    try {
+      const code = device.serialNumber || device.internalCode;
+      const { data } = await api.post<AddScanResult>(`/api/events/${eventId}/add-by-scan`, { code });
+      if (data.success) {
+        toast.success(data.message);
+        await queryClient.invalidateQueries({ queryKey: ['events'] });
+        await queryClient.invalidateQueries({ queryKey: ['event', eventId] });
+      } else {
+        toast.error(data.message);
+      }
+    } catch (err: unknown) {
+      const res = (err as { response?: { data?: AddScanResult } })?.response?.data;
+      toast.error(res?.message || 'No se pudo agregar al evento');
+    } finally {
+      setAddingToEvent(false);
+    }
+  };
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isStartingRef = useRef(false);
@@ -259,6 +364,12 @@ export default function Scanner() {
   );
 
   useEffect(() => {
+    if (mode === 'event') {
+      void stopCamera();
+    }
+  }, [mode, stopCamera]);
+
+  useEffect(() => {
     return () => {
       void stopCamera();
     };
@@ -306,11 +417,104 @@ export default function Scanner() {
           <ScanLine className="h-6 w-6 text-primary" /> Escanear equipo
         </h1>
         <p className="text-sm text-muted mt-1">
-          Apunta la cámara al código de barras de la etiqueta o al número de serie del equipo. Mantén el código
-          dentro del recuadro y a unos 15–25 cm de distancia.
+          {mode === 'event'
+            ? 'Escanea equipos uno tras otro para llenar la lista del evento. La cámara sigue activa entre lecturas.'
+            : 'Apunta la cámara al código de barras de la etiqueta o al número de serie del equipo.'}
         </p>
       </div>
 
+      {canEvent && (
+        <div className="flex gap-2 p-1 bg-card rounded-lg border border-border">
+          <Button
+            variant={mode === 'lookup' ? 'default' : 'ghost'}
+            size="sm"
+            className="flex-1"
+            onClick={() => setMode('lookup')}
+          >
+            <ScanLine className="h-4 w-4 mr-1.5" /> Consultar equipo
+          </Button>
+          <Button
+            variant={mode === 'event' ? 'default' : 'ghost'}
+            size="sm"
+            className="flex-1"
+            onClick={() => setMode('event')}
+          >
+            <ListPlus className="h-4 w-4 mr-1.5" /> Armar evento
+          </Button>
+        </div>
+      )}
+
+      {mode === 'event' && canEvent && (
+        <div className="space-y-4">
+          <div className="bg-card rounded-xl border border-border p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <label className="text-sm font-medium flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-primary" /> Evento activo
+              </label>
+              {activeEvent && (
+                <Link to={`/events/${activeEvent.id}`} className="text-xs text-primary hover:underline flex items-center gap-1">
+                  Ver lista <ExternalLink className="h-3 w-3" />
+                </Link>
+              )}
+            </div>
+            {draftEvents.length === 0 ? (
+              <div className="text-sm text-muted space-y-2">
+                <p>No hay eventos en borrador. Crea uno primero.</p>
+                {hasPermission('events.manage') && (
+                  <Button size="sm" onClick={() => navigate('/events')}>
+                    Ir a Eventos
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <select
+                value={eventBuildId ?? ''}
+                onChange={(e) => setEventBuildIdState(e.target.value || null)}
+                className="w-full h-10 px-3 rounded-md bg-background border border-border text-sm"
+              >
+                {draftEvents.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name} ({e.stats.total} equipos)
+                  </option>
+                ))}
+              </select>
+            )}
+            {activeEvent && (
+              <p className="text-xs text-muted">
+                {activeEvent.stats.total} equipo{activeEvent.stats.total !== 1 ? 's' : ''} en la lista
+              </p>
+            )}
+          </div>
+
+          {eventBuildId && (
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm text-muted">Escaneo continuo</p>
+                <Button variant="ghost" size="sm" onClick={() => setEventScanActive((s) => !s)}>
+                  {eventScanActive ? 'Pausar' : 'Reanudar'}
+                </Button>
+              </div>
+              <BarcodeScanner
+                readerId="event-build-scanner"
+                active={eventScanActive && !!eventBuildId}
+                onScan={handleEventAddScan}
+              />
+              {lastEventAdd?.device && (
+                <div className="flex items-center gap-2 text-sm text-green-400 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  <span>
+                    {lastEventAdd.message} · <span className="font-mono">{lastEventAdd.device.internalCode}</span>
+                    {lastEventAdd.total != null ? ` · Total: ${lastEventAdd.total}` : ''}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {mode === 'lookup' && (
+      <>
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         <div className="relative bg-black aspect-[4/3] flex items-center justify-center">
           <div id={READER_ID} className="w-full h-full [&_video]:h-full [&_video]:w-full [&_video]:object-cover" />
@@ -458,7 +662,36 @@ export default function Scanner() {
             </div>
           )}
 
-          <div className="p-4 border-t border-border">
+          <div className="p-4 border-t border-border space-y-2">
+            {canEvent && draftEvents.length > 0 && (
+              <div className="flex gap-2">
+                <select
+                  value={selectedEventForDevice}
+                  onChange={(e) => setSelectedEventForDevice(e.target.value)}
+                  className="flex-1 h-10 px-3 rounded-md bg-background border border-border text-sm min-w-0"
+                >
+                  {draftEvents.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  variant="outline"
+                  className="min-h-touch shrink-0"
+                  disabled={addingToEvent || !selectedEventForDevice}
+                  onClick={() => addDeviceToEvent(selectedEventForDevice)}
+                >
+                  {addingToEvent ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <ListPlus className="h-4 w-4 mr-1" /> Agregar a evento
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
             <Button
               variant={addedToCart ? 'outline' : 'default'}
               className="w-full min-h-touch"
@@ -523,6 +756,8 @@ export default function Scanner() {
             </Button>
           </div>
         </motion.div>
+      )}
+      </>
       )}
     </motion.div>
   );

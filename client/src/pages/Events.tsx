@@ -7,6 +7,7 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
+import { setBuildEventId } from '@/lib/eventBuild';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import LocationSelect from '@/components/LocationSelect';
@@ -113,9 +114,10 @@ export default function Events() {
         deviceIds: selectedDevices.map((d) => d.id),
       });
       await queryClient.invalidateQueries({ queryKey: ['events'] });
-      toast.success('Evento creado');
+      toast.success('Evento creado. Escanea los equipos para armar la lista.');
       setCreateOpen(false);
       resetForm();
+      setBuildEventId(data.id);
       window.location.href = `/events/${data.id}`;
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
@@ -220,17 +222,30 @@ export default function Events() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {canManage && e.status === 'DRAFT' && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive"
-                    onClick={(ev) => {
-                      ev.preventDefault();
-                      void handleDelete(e);
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <>
+                    <Button variant="outline" size="sm" asChild>
+                      <Link
+                        to={`/scan?mode=event&eventId=${e.id}`}
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          setBuildEventId(e.id);
+                        }}
+                      >
+                        Escanear
+                      </Link>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive"
+                      onClick={(ev) => {
+                        ev.preventDefault();
+                        void handleDelete(e);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </>
                 )}
                 <ChevronRight className="h-5 w-5 text-muted group-hover:text-primary" />
               </div>
@@ -302,21 +317,32 @@ export default function Events() {
               <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Detalles del evento..." />
             </div>
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-sm text-muted">Equipos ({selectedDevices.length})</label>
-                <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)}>
-                  <Plus className="h-4 w-4 mr-1" /> Agregar
-                </Button>
-              </div>
+              <label className="text-sm text-muted block mb-1">Equipos</label>
+              <p className="text-xs text-muted mb-2">
+                Después de crear el evento, escanea los equipos en la ficha del evento o en Escanear → Armar evento.
+              </p>
               {selectedDevices.length > 0 && (
-                <ul className="text-sm border border-border rounded-md divide-y divide-border max-h-32 overflow-y-auto">
-                  {selectedDevices.map((d) => (
-                    <li key={d.id} className="px-3 py-2 flex justify-between gap-2">
-                      <span className="truncate">{d.name}</span>
-                      <span className="font-mono text-xs text-primary shrink-0">{d.internalCode}</span>
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted">Preseleccionados ({selectedDevices.length})</span>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => setPickerOpen(true)}>
+                      <Plus className="h-4 w-4 mr-1" /> Agregar manual
+                    </Button>
+                  </div>
+                  <ul className="text-sm border border-border rounded-md divide-y divide-border max-h-32 overflow-y-auto">
+                    {selectedDevices.map((d) => (
+                      <li key={d.id} className="px-3 py-2 flex justify-between gap-2">
+                        <span className="truncate">{d.name}</span>
+                        <span className="font-mono text-xs text-primary shrink-0">{d.internalCode}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {selectedDevices.length === 0 && (
+                <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)}>
+                  <Plus className="h-4 w-4 mr-1" /> Agregar manual (opcional)
+                </Button>
               )}
             </div>
           </div>

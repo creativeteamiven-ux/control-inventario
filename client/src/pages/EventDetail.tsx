@@ -65,6 +65,14 @@ interface ScanResult {
   device?: { id: string; name: string; internalCode: string };
 }
 
+interface AddScanResult {
+  success: boolean;
+  code: string;
+  message: string;
+  device?: { id: string; name: string; internalCode: string };
+  total?: number;
+}
+
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
@@ -75,7 +83,9 @@ export default function EventDetailPage() {
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [scanning, setScanning] = useState(canScan);
+  const [addingScan, setAddingScan] = useState(true);
   const [lastScan, setLastScan] = useState<ScanResult | null>(null);
+  const [lastAdded, setLastAdded] = useState<AddScanResult | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [activating, setActivating] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'done'>('all');
@@ -93,6 +103,27 @@ export default function EventDetailPage() {
   const phase = event?.currentPhase ?? 'OUTBOUND';
   const isActive = event?.status === 'ACTIVE';
   const isDraft = event?.status === 'DRAFT';
+
+  const handleDraftAddScan = useCallback(
+    async (code: string) => {
+      if (!id || !isDraft) return;
+      try {
+        const { data } = await api.post<AddScanResult>(`/api/events/${id}/add-by-scan`, { code });
+        setLastAdded(data);
+        if (data.success) {
+          toast.success(data.message, { duration: 1800 });
+          await queryClient.invalidateQueries({ queryKey: ['event', id] });
+          await queryClient.invalidateQueries({ queryKey: ['events'] });
+        } else {
+          toast.error(data.message);
+        }
+      } catch (err: unknown) {
+        const res = (err as { response?: { data?: AddScanResult } })?.response?.data;
+        toast.error(res?.message || 'No se pudo agregar el equipo');
+      }
+    },
+    [id, isDraft, queryClient]
+  );
 
   const handleScan = useCallback(
     async (code: string) => {
@@ -204,6 +235,39 @@ export default function EventDetailPage() {
         </div>
       </div>
 
+      {/* Borrador: escanear para armar la lista */}
+      {isDraft && (canManage || canScan) && (
+        <div className="bg-primary/5 border border-primary/30 rounded-xl p-4 space-y-4">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <h2 className="font-semibold text-lg">Escanea para agregar equipos</h2>
+              <p className="text-sm text-muted mt-0.5">
+                Apunta al código de barras de cada equipo. La lista se llena automáticamente ({event.items.length}{' '}
+                equipos).
+              </p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setAddingScan((s) => !s)}>
+              {addingScan ? 'Pausar' : 'Escanear'}
+            </Button>
+          </div>
+          <BarcodeScanner readerId={`event-add-${id}`} active={addingScan} onScan={handleDraftAddScan} />
+          {lastAdded?.device && (
+            <div className="flex items-center gap-2 text-sm text-green-400 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <span>
+                {lastAdded.message} · <span className="font-mono">{lastAdded.device.internalCode}</span>
+                {lastAdded.total != null ? ` · Total: ${lastAdded.total}` : ''}
+              </span>
+            </div>
+          )}
+          {canManage && (
+            <Button variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="w-full sm:w-auto">
+              <Plus className="h-4 w-4 mr-1" /> Buscar manualmente (opcional)
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Progreso */}
       <div className="bg-card rounded-xl border border-border p-4 space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
@@ -225,9 +289,17 @@ export default function EventDetailPage() {
           />
         </div>
         {isDraft && canManage && (
-          <Button className="w-full min-h-touch" onClick={handleActivate} disabled={activating || event.items.length === 0}>
+          <Button
+            className="w-full min-h-touch"
+            onClick={handleActivate}
+            disabled={activating || event.items.length === 0}
+          >
             <Play className="h-4 w-4 mr-2" />
-            {activating ? 'Activando...' : 'Activar evento e iniciar escaneo'}
+            {activating
+              ? 'Activando...'
+              : event.items.length === 0
+                ? 'Agrega equipos escaneando antes de activar'
+                : `Activar evento (${event.items.length} equipos)`}
           </Button>
         )}
         {isActive && canManage && progressPct === 100 && (
@@ -314,8 +386,8 @@ export default function EventDetailPage() {
               </Button>
             ))}
             {canManage && isDraft && (
-              <Button variant="outline" size="sm" onClick={() => setPickerOpen(true)}>
-                <Plus className="h-4 w-4 mr-1" /> Agregar
+              <Button variant="ghost" size="sm" onClick={() => setPickerOpen(true)} className="text-muted">
+                <Plus className="h-4 w-4 mr-1" /> Manual
               </Button>
             )}
           </div>

@@ -258,6 +258,73 @@ router.delete('/:id/items/:itemId', requirePermission('events.manage'), async (r
   }
 });
 
+/** Escanear código y agregar equipo a un evento en borrador (armado de lista) */
+router.post('/:id/add-by-scan', async (req: AuthRequest, res, next) => {
+  try {
+    const perms = req.user?.permissions ?? [];
+    if (!perms.includes('events.manage') && !perms.includes('events.scan')) {
+      throw new AppError(403, 'Sin permiso para agregar equipos al evento');
+    }
+    const { code } = req.body as { code?: string };
+    if (!code?.trim()) throw new AppError(400, 'Indica el código escaneado');
+
+    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+    if (!event) throw new AppError(404, 'Evento no encontrado');
+    if (event.status !== 'DRAFT') {
+      throw new AppError(400, 'Solo puedes agregar equipos escaneando en eventos en borrador');
+    }
+
+    const device = await findDeviceByCode(code);
+    if (!device) {
+      return res.status(404).json({
+        success: false,
+        code: 'NOT_FOUND',
+        message: 'No se encontró ningún equipo con ese código',
+      });
+    }
+
+    const existing = await prisma.eventItem.findUnique({
+      where: { eventId_deviceId: { eventId: event.id, deviceId: device.id } },
+    });
+    if (existing) {
+      const current = await loadEvent(event.id);
+      return res.json({
+        success: true,
+        code: 'ALREADY_ON_LIST',
+        message: 'Este equipo ya está en la lista',
+        device: { id: device.id, name: device.name, internalCode: device.internalCode },
+        total: current ? eventStats(current.items).total : undefined,
+      });
+    }
+
+    const maxOrder = await prisma.eventItem.aggregate({
+      where: { eventId: event.id },
+      _max: { sortOrder: true },
+    });
+    await prisma.eventItem.create({
+      data: {
+        eventId: event.id,
+        deviceId: device.id,
+        sortOrder: (maxOrder._max.sortOrder ?? -1) + 1,
+      },
+    });
+
+    const updated = await loadEvent(event.id);
+    const names = await locationNames();
+    const mapped = mapEventResponse(updated, names);
+    res.json({
+      success: true,
+      code: 'ADDED',
+      message: `${device.internalCode} agregado a la lista`,
+      device: { id: device.id, name: device.name, internalCode: device.internalCode },
+      stats: mapped?.stats,
+      total: mapped?.stats?.total,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 /** Escanear código de barras en checklist (multi-usuario) */
 router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthRequest, res, next) => {
   try {
