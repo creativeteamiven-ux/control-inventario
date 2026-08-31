@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { PrismaClient, EventPhase, EventStatus, MovementType } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
-import { assertLocationCode } from '../lib/locations.js';
+import { assertLocationCode, locationDisplayName, resolveEventDestination, isTemporaryLocation } from '../lib/locations.js';
 import { writeAudit } from '../lib/audit.js';
 
 const router = Router();
@@ -57,14 +57,25 @@ async function findDeviceByCode(code: string) {
   });
 }
 
-function mapEventResponse(event: Awaited<ReturnType<typeof loadEvent>>) {
+function mapEventResponse(event: Awaited<ReturnType<typeof loadEvent>>, nameMap?: Record<string, string>) {
   if (!event) return null;
   const stats = eventStats(event.items);
-  return { ...event, stats };
+  return {
+    ...event,
+    stats,
+    fromLocationLabel: locationDisplayName(event.fromLocation, nameMap),
+    toLocationLabel: locationDisplayName(event.toLocation, nameMap),
+    toLocationIsTemporary: isTemporaryLocation(event.toLocation),
+  };
 }
 
 async function loadEvent(id: string) {
   return prisma.event.findUnique({ where: { id }, include: eventInclude });
+}
+
+async function locationNames() {
+  const list = await prisma.location.findMany({ select: { code: true, name: true } });
+  return Object.fromEntries(list.map((l) => [l.code, l.name]));
 }
 
 /** Listar eventos */
@@ -80,10 +91,14 @@ router.get('/', requirePermission('events.view'), async (req, res, next) => {
         items: { select: { id: true, outboundScannedAt: true, inboundScannedAt: true } },
       },
     });
+    const names = await locationNames();
     res.json(
       events.map((e) => ({
         ...e,
         stats: eventStats(e.items),
+        fromLocationLabel: locationDisplayName(e.fromLocation, names),
+        toLocationLabel: locationDisplayName(e.toLocation, names),
+        toLocationIsTemporary: isTemporaryLocation(e.toLocation),
         items: undefined,
       }))
     );
@@ -95,17 +110,18 @@ router.get('/', requirePermission('events.view'), async (req, res, next) => {
 /** Crear evento */
 router.post('/', requirePermission('events.manage'), async (req: AuthRequest, res, next) => {
   try {
-    const { name, eventDate, fromLocation, toLocation, notes, deviceIds } = req.body as {
+    const { name, eventDate, fromLocation, toLocation, toLocationCustom, notes, deviceIds } = req.body as {
       name?: string;
       eventDate?: string;
       fromLocation?: string;
       toLocation?: string;
+      toLocationCustom?: string;
       notes?: string;
       deviceIds?: string[];
     };
     if (!name?.trim()) throw new AppError(400, 'Indica el nombre del evento');
     const from = await assertLocationCode(prisma, fromLocation ?? 'STORAGE_ROOM');
-    const to = await assertLocationCode(prisma, toLocation ?? 'MAIN_AUDITORIUM');
+    const to = await resolveEventDestination(prisma, { toLocation, toLocationCustom });
     const event = await prisma.event.create({
       data: {
         name: name.trim(),
@@ -123,7 +139,8 @@ router.post('/', requirePermission('events.manage'), async (req: AuthRequest, re
       include: eventInclude,
     });
     await writeAudit(req, 'Event', event.id, 'CREATE', { name: event.name });
-    res.status(201).json(mapEventResponse(event));
+    const names = await locationNames();
+    res.status(201).json(mapEventResponse(event, names));
   } catch (e) {
     next(e);
   }
@@ -134,7 +151,8 @@ router.get('/:id', requirePermission('events.view'), async (req, res, next) => {
   try {
     const event = await loadEvent(req.params.id);
     if (!event) throw new AppError(404, 'Evento no encontrado');
-    res.json(mapEventResponse(event));
+    const names = await locationNames();
+    res.json(mapEventResponse(event, names));
   } catch (e) {
     next(e);
   }
@@ -148,12 +166,16 @@ router.patch('/:id', requirePermission('events.manage'), async (req: AuthRequest
     if (existing.status === 'COMPLETED' || existing.status === 'CANCELLED') {
       throw new AppError(400, 'No se puede editar un evento cerrado');
     }
-    const { name, eventDate, fromLocation, toLocation, notes, currentPhase } = req.body as Record<string, string>;
+    const { name, eventDate, fromLocation, toLocation, toLocationCustom, notes, currentPhase } = req.body as Record<string, string>;
     const data: Record<string, unknown> = {};
     if (name?.trim()) data.name = name.trim();
     if (eventDate) data.eventDate = parseEventDate(eventDate);
     if (fromLocation) data.fromLocation = await assertLocationCode(prisma, fromLocation);
-    if (toLocation) data.toLocation = await assertLocationCode(prisma, toLocation);
+    if (toLocationCustom?.trim()) {
+      data.toLocation = await resolveEventDestination(prisma, { toLocationCustom });
+    } else if (toLocation) {
+      data.toLocation = await resolveEventDestination(prisma, { toLocation });
+    }
     if (notes !== undefined) data.notes = notes?.trim() || null;
     if (currentPhase === 'OUTBOUND' || currentPhase === 'INBOUND') data.currentPhase = currentPhase;
     const event = await prisma.event.update({
@@ -161,7 +183,8 @@ router.patch('/:id', requirePermission('events.manage'), async (req: AuthRequest
       data,
       include: eventInclude,
     });
-    res.json(mapEventResponse(event));
+    const names = await locationNames();
+    res.json(mapEventResponse(event, names));
   } catch (e) {
     next(e);
   }
@@ -180,7 +203,8 @@ router.post('/:id/activate', requirePermission('events.manage'), async (req: Aut
       include: eventInclude,
     });
     await writeAudit(req, 'Event', event.id, 'UPDATE', { status: 'ACTIVE' });
-    res.json(mapEventResponse(event));
+    const names = await locationNames();
+    res.json(mapEventResponse(event, names));
   } catch (e) {
     next(e);
   }
@@ -211,7 +235,8 @@ router.post('/:id/items', requirePermission('events.manage'), async (req: AuthRe
       });
     }
     const event = await loadEvent(req.params.id);
-    res.json(mapEventResponse(event));
+    const names = await locationNames();
+    res.json(mapEventResponse(event, names));
   } catch (e) {
     next(e);
   }
@@ -226,7 +251,8 @@ router.delete('/:id/items/:itemId', requirePermission('events.manage'), async (r
     if (!item) throw new AppError(404, 'Ítem no encontrado');
     await prisma.eventItem.delete({ where: { id: item.id } });
     const event = await loadEvent(req.params.id);
-    res.json(mapEventResponse(event));
+    const names = await locationNames();
+    res.json(mapEventResponse(event, names));
   } catch (e) {
     next(e);
   }
@@ -245,6 +271,10 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
     if (event.currentPhase !== phase) {
       throw new AppError(400, phase === 'OUTBOUND' ? 'La fase actual es regreso (entrada)' : 'La fase actual es salida');
     }
+
+    const locNames = await locationNames();
+    const fromLabel = locationDisplayName(event.fromLocation, locNames);
+    const toLabel = locationDisplayName(event.toLocation, locNames);
 
     const device = await findDeviceByCode(code);
     const userId = req.user!.userId;
@@ -305,9 +335,10 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
         return res.status(400).json({
           success: false,
           code: 'WRONG_LOCATION',
-          message: `El equipo no está en el lugar de origen. Debe estar en "${event.fromLocation}" pero está en "${device.location}"`,
+          message: `El equipo no está en el lugar de origen. Debe estar en "${fromLabel}" pero está en "${locationDisplayName(device.location, locNames)}"`,
           device: { id: device.id, name: device.name, internalCode: device.internalCode, location: device.location },
           expectedLocation: event.fromLocation,
+          expectedLocationLabel: fromLabel,
         });
       }
       if (item.outboundScannedAt) {
@@ -369,9 +400,10 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
       return res.status(400).json({
         success: false,
         code: 'WRONG_LOCATION',
-        message: `El equipo no está en el lugar del evento. Debe estar en "${event.toLocation}" pero está en "${device.location}"`,
+        message: `El equipo no está en el lugar del evento. Debe estar en "${toLabel}" pero está en "${locationDisplayName(device.location, locNames)}"`,
         device: { id: device.id, name: device.name, internalCode: device.internalCode, location: device.location },
         expectedLocation: event.toLocation,
+        expectedLocationLabel: toLabel,
       });
     }
     if (item.inboundScannedAt) {
@@ -457,7 +489,8 @@ router.post('/:id/confirm-outbound', requirePermission('events.manage'), async (
       include: eventInclude,
     });
     await writeAudit(req, 'Event', event.id, 'UPDATE', { confirmOutbound: true, moved });
-    res.json({ ok: true, moved, event: mapEventResponse(updated) });
+    const names = await locationNames();
+    res.json({ ok: true, moved, event: mapEventResponse(updated, names) });
   } catch (e) {
     next(e);
   }
@@ -503,7 +536,8 @@ router.post('/:id/confirm-inbound', requirePermission('events.manage'), async (r
       include: eventInclude,
     });
     await writeAudit(req, 'Event', event.id, 'UPDATE', { confirmInbound: true, moved, status: 'COMPLETED' });
-    res.json({ ok: true, moved, event: mapEventResponse(updated) });
+    const names = await locationNames();
+    res.json({ ok: true, moved, event: mapEventResponse(updated, names) });
   } catch (e) {
     next(e);
   }

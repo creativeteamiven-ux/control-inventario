@@ -20,6 +20,7 @@ export function useLocations() {
   const locations = query.data ?? [];
   const label = (code?: string | null) => {
     if (!code) return '—';
+    if (code.startsWith('@')) return code.slice(1);
     return locations.find((l) => l.code === code)?.name ?? deviceLocationLabel(code);
   };
   return { ...query, locations, label };

@@ -38,6 +38,7 @@ export function deviceStatusLabel(status: string): string {
 }
 
 export function deviceLocationLabel(location: string): string {
+  if (location?.startsWith('@')) return location.slice(1);
   return DEVICE_LOCATION_LABELS[location] ?? location?.replace(/_/g, ' ') ?? '';
 }
 

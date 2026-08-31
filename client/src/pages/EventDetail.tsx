@@ -48,6 +48,9 @@ interface EventDetail {
   eventDate: string;
   fromLocation: string;
   toLocation: string;
+  fromLocationLabel?: string;
+  toLocationLabel?: string;
+  toLocationIsTemporary?: boolean;
   status: string;
   currentPhase: 'OUTBOUND' | 'INBOUND';
   notes: string | null;
@@ -180,6 +183,9 @@ export default function EventDetailPage() {
     return true;
   });
 
+  const fromLabel = event.fromLocationLabel ?? locationLabel(event.fromLocation);
+  const toLabel = event.toLocationLabel ?? locationLabel(event.toLocation);
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 max-w-4xl mx-auto">
       <div className="flex items-start gap-3">
@@ -192,7 +198,8 @@ export default function EventDetailPage() {
             {format(new Date(event.eventDate), "EEEE d MMM yyyy, HH:mm", { locale: es })}
           </p>
           <p className="text-sm text-muted">
-            {locationLabel(event.fromLocation)} → {locationLabel(event.toLocation)}
+            {fromLabel} → {toLabel}
+            {event.toLocationIsTemporary && <span className="text-primary/80"> (lugar temporal)</span>}
           </p>
         </div>
       </div>
@@ -289,8 +296,8 @@ export default function EventDetailPage() {
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200/90 flex gap-2">
               <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
               {phase === 'OUTBOUND'
-                ? `Verifica que cada equipo esté en "${locationLabel(event.fromLocation)}" antes de sacarlo.`
-                : `Verifica que cada equipo esté en "${locationLabel(event.toLocation)}" antes de guardarlo.`}
+                ? `Verifica que cada equipo esté en "${fromLabel}" antes de sacarlo.`
+                : `Verifica que cada equipo esté en "${toLabel}" antes de guardarlo.`}
             </div>
           </div>
         </div>

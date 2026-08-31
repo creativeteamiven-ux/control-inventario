@@ -28,6 +28,9 @@ interface EventSummary {
   eventDate: string;
   fromLocation: string;
   toLocation: string;
+  fromLocationLabel?: string;
+  toLocationLabel?: string;
+  toLocationIsTemporary?: boolean;
   status: 'DRAFT' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
   currentPhase: 'OUTBOUND' | 'INBOUND';
   stats: { total: number; outboundDone: number; inboundDone: number };
@@ -57,7 +60,9 @@ export default function Events() {
   const [name, setName] = useState('');
   const [eventDate, setEventDate] = useState(() => new Date().toISOString().slice(0, 16));
   const [fromLocation, setFromLocation] = useState('STORAGE_ROOM');
+  const [destType, setDestType] = useState<'registered' | 'custom'>('registered');
   const [toLocation, setToLocation] = useState('MAIN_AUDITORIUM');
+  const [toLocationCustom, setToLocationCustom] = useState('');
   const [notes, setNotes] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedDevices, setSelectedDevices] = useState<{ id: string; internalCode: string; name: string }[]>([]);
@@ -78,7 +83,9 @@ export default function Events() {
     setName('');
     setEventDate(new Date().toISOString().slice(0, 16));
     setFromLocation('STORAGE_ROOM');
+    setDestType('registered');
     setToLocation('MAIN_AUDITORIUM');
+    setToLocationCustom('');
     setNotes('');
     setSelectedDevices([]);
   };
@@ -88,13 +95,19 @@ export default function Events() {
       toast.error('Indica el nombre del evento');
       return;
     }
+    if (destType === 'custom' && !toLocationCustom.trim()) {
+      toast.error('Indica el nombre del lugar del evento (ej. Teatro Municipal)');
+      return;
+    }
     setCreating(true);
     try {
       const { data } = await api.post('/api/events', {
         name: name.trim(),
         eventDate,
         fromLocation,
-        toLocation,
+        ...(destType === 'custom'
+          ? { toLocationCustom: toLocationCustom.trim() }
+          : { toLocation }),
         notes: notes.trim() || undefined,
         deviceIds: selectedDevices.map((d) => d.id),
       });
@@ -188,7 +201,11 @@ export default function Events() {
                 <h2 className="font-semibold text-lg mt-1 truncate">{e.name}</h2>
                 <p className="text-sm text-muted">
                   {format(new Date(e.eventDate), "d MMM yyyy, HH:mm", { locale: es })} ·{' '}
-                  {locationLabel(e.fromLocation)} → {locationLabel(e.toLocation)}
+                  {(e.fromLocationLabel ?? locationLabel(e.fromLocation))} →{' '}
+                  {(e.toLocationLabel ?? locationLabel(e.toLocation))}
+                  {e.toLocationIsTemporary && (
+                    <span className="text-primary/80"> (temporal)</span>
+                  )}
                 </p>
                 {e.stats.total > 0 && (
                   <p className="text-xs text-muted mt-1">
@@ -232,14 +249,45 @@ export default function Events() {
               <label className="text-sm text-muted block mb-1">Fecha y hora</label>
               <Input type="datetime-local" value={eventDate} onChange={(e) => setEventDate(e.target.value)} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <div>
-                <label className="text-sm text-muted block mb-1">Origen (salida)</label>
+                <label className="text-sm text-muted block mb-1">Origen (de dónde salen los equipos)</label>
                 <LocationSelect value={fromLocation} onChange={setFromLocation} />
               </div>
               <div>
-                <label className="text-sm text-muted block mb-1">Destino (evento)</label>
-                <LocationSelect value={toLocation} onChange={setToLocation} />
+                <label className="text-sm text-muted block mb-2">Destino (dónde es el evento)</label>
+                <div className="flex gap-2 mb-2">
+                  <Button
+                    type="button"
+                    variant={destType === 'registered' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setDestType('registered')}
+                  >
+                    Lugar habitual
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={destType === 'custom' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setDestType('custom')}
+                  >
+                    Lugar temporal
+                  </Button>
+                </div>
+                {destType === 'registered' ? (
+                  <LocationSelect value={toLocation} onChange={setToLocation} />
+                ) : (
+                  <div className="space-y-1">
+                    <Input
+                      value={toLocationCustom}
+                      onChange={(e) => setToLocationCustom(e.target.value)}
+                      placeholder="Ej. Teatro Municipal, Parque Simón Bolívar..."
+                    />
+                    <p className="text-xs text-muted">
+                      No hace falta crear este lugar en el sistema. Solo se usa para este evento.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
             <div>
