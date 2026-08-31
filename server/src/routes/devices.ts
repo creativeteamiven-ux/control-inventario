@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { generateBarcodeBuffer, generateBarcodeDataUrl } from '../lib/barcode.js';
+import { barcodeTextForDevice, generateBarcodeBuffer, generateBarcodeDataUrl } from '../lib/barcode.js';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -128,7 +128,7 @@ router.get('/labels', async (req, res, next) => {
     if (idsParam?.length) where.id = { in: idsParam };
     const devices = await prisma.device.findMany({
       where,
-      select: { id: true, internalCode: true, name: true, brand: true },
+      select: { id: true, internalCode: true, serialNumber: true, name: true, brand: true },
       orderBy: { internalCode: 'asc' },
       take: 500,
     });
@@ -162,14 +162,16 @@ router.get('/labels', async (req, res, next) => {
 
       doc.roundedRect(x + 4, y + 4, cellW - 8, cellH - 8, 6).strokeColor('#e2e8f0').lineWidth(1).stroke();
 
-      const barcodeBuf = await generateBarcodeBuffer(d.internalCode);
+      const barcodeText = barcodeTextForDevice(d);
+      const barcodeBuf = await generateBarcodeBuffer(barcodeText);
       doc.image(barcodeBuf, x + 14, y + 14, { width: barcodeW, height: barcodeH });
 
       const textX = x + 14;
       const textW = cellW - 28;
-      doc.fillColor('#0f172a').fontSize(12).font('Helvetica-Bold').text(d.internalCode, textX, y + 72, { width: textW, align: 'center' });
-      doc.fillColor('#334155').fontSize(9).font('Helvetica').text(String(d.name).slice(0, 42), textX, y + 88, { width: textW, align: 'center' });
-      if (d.brand) doc.fillColor('#64748b').fontSize(8).text(String(d.brand).slice(0, 32), textX, y + 102, { width: textW, align: 'center' });
+      doc.fillColor('#0f172a').fontSize(12).font('Helvetica-Bold').text(barcodeText, textX, y + 72, { width: textW, align: 'center' });
+      doc.fillColor('#64748b').fontSize(8).font('Helvetica').text(d.internalCode, textX, y + 86, { width: textW, align: 'center' });
+      doc.fillColor('#334155').fontSize(9).font('Helvetica').text(String(d.name).slice(0, 42), textX, y + 98, { width: textW, align: 'center' });
+      if (d.brand) doc.fillColor('#64748b').fontSize(8).text(String(d.brand).slice(0, 32), textX, y + 112, { width: textW, align: 'center' });
       doc.fillColor('#94a3b8').fontSize(7).text('The Warehouse', textX, y + cellH - 18, { width: textW, align: 'center' });
       i++;
     }
@@ -468,15 +470,16 @@ router.get('/:id/qr', async (req, res, next) => {
   try {
     const device = await prisma.device.findFirst({
       where: { id: req.params.id, deletedAt: null },
-      select: { id: true, internalCode: true, qrCode: true, isQrGenerated: true },
+      select: { id: true, internalCode: true, serialNumber: true, qrCode: true, isQrGenerated: true },
     });
     if (!device) throw new AppError(404, 'Equipo no encontrado');
-    const barcodeDataUrl = await generateBarcodeDataUrl(device.internalCode);
+    const barcodeText = barcodeTextForDevice(device);
+    const barcodeDataUrl = await generateBarcodeDataUrl(barcodeText);
     await prisma.device.update({
       where: { id: device.id },
       data: { qrCode: barcodeDataUrl, isQrGenerated: true },
     });
-    res.json({ barcode: barcodeDataUrl, qrCode: barcodeDataUrl, code: device.internalCode });
+    res.json({ barcode: barcodeDataUrl, qrCode: barcodeDataUrl, code: barcodeText, internalCode: device.internalCode });
   } catch (e) {
     next(e);
   }

@@ -157,7 +157,7 @@ export default function DeviceDetail() {
     if (!img) return;
     const a = document.createElement('a');
     a.href = img;
-    a.download = `barcode-${d.internalCode}.png`;
+    a.download = `barcode-${d.serialNumber || d.internalCode}.png`;
     a.click();
   };
 
@@ -539,10 +539,13 @@ export default function DeviceDetail() {
               <div className="flex flex-col items-center">
                 <img
                   src={barcodeData?.barcode ?? barcodeData?.qrCode}
-                  alt={`Código de barras ${d.internalCode}`}
+                  alt={`Código de barras ${d.serialNumber || d.internalCode}`}
                   className="w-full max-w-xs rounded-lg bg-white p-3"
                 />
-                <p className="text-sm text-muted mt-2 font-mono">{d.internalCode}</p>
+                <p className="text-sm text-foreground mt-2 font-mono">{d.serialNumber || d.internalCode}</p>
+                {d.serialNumber && (
+                  <p className="text-xs text-muted mt-0.5">{d.internalCode}</p>
+                )}
                 <p className="text-xs text-muted mt-1">Escanea para identificar el equipo al instante</p>
                 <Button variant="outline" size="sm" className="mt-4" onClick={downloadBarcode}>
                   <Download className="h-4 w-4 mr-2" />
