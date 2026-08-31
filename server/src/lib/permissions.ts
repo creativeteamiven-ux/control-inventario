@@ -26,6 +26,9 @@ export const PERMISSIONS: PermissionDef[] = [
   { key: 'loans.create', label: 'Gestionar préstamos', module: 'Préstamos', description: 'Crear préstamos y registrar devoluciones' },
   { key: 'movements.view', label: 'Ver movimientos', module: 'Movimientos', description: 'Ver historial de movimientos' },
   { key: 'movements.create', label: 'Registrar movimientos', module: 'Movimientos', description: 'Cargar y registrar traslados' },
+  { key: 'events.view', label: 'Ver eventos', module: 'Eventos', description: 'Ver listas de equipos por evento' },
+  { key: 'events.manage', label: 'Gestionar eventos', module: 'Eventos', description: 'Crear listas, agregar equipos y confirmar salidas/entradas' },
+  { key: 'events.scan', label: 'Escanear en eventos', module: 'Eventos', description: 'Verificar equipos con código de barras en checklist' },
   { key: 'reports.view', label: 'Ver reportes', module: 'Reportes', description: 'Acceder al módulo de reportes' },
   { key: 'reports.export', label: 'Exportar reportes', module: 'Reportes', description: 'Descargar PDF/Excel de reportes' },
   { key: 'finance.view', label: 'Ver gastos', module: 'Gastos', description: 'Ver gastos y reportes financieros' },
@@ -49,12 +52,14 @@ const ROLE_DEFAULTS: Record<string, string[]> = {
     'maintenance.view', 'maintenance.create',
     'loans.view', 'loans.create',
     'movements.view', 'movements.create',
+    'events.view', 'events.scan',
     'reports.view', 'reports.export',
     'finance.view', 'finance.manage',
   ],
   VIEWER: [
     'inventory.view', 'categories.view', 'maintenance.view', 'loans.view',
     'movements.view', 'reports.view',
+    'events.view',
   ],
 };
 

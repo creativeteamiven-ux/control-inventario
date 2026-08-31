@@ -36,6 +36,18 @@ enum MovementType {
   STATUS_CHANGE
 }
 
+enum EventStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum EventPhase {
+  OUTBOUND
+  INBOUND
+}
+
 enum UserRole {
   ADMIN
   MANAGER
@@ -131,6 +143,7 @@ model Device {
   loanRecords    LoanRecord[]
   expenses       Expense[]
   tags           Tag[]
+  eventItems     EventItem[]
 }
 
 model DeviceImage {
@@ -260,4 +273,62 @@ model AlertRecipient {
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Listas de equipos por evento con checklist de salida/entrada por escaneo.
+model Event {
+  id            String      @id @default(cuid())
+  name          String
+  eventDate     DateTime
+  fromLocation  String      @db.VarChar(64)
+  toLocation    String      @db.VarChar(64)
+  status        EventStatus @default(DRAFT)
+  currentPhase  EventPhase  @default(OUTBOUND)
+  notes         String?     @db.Text
+  createdBy     String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  items         EventItem[]
+  scans         EventScan[]
+
+  @@index([status])
+  @@index([eventDate])
+}
+
+model EventItem {
+  id                 String    @id @default(cuid())
+  eventId            String
+  event              Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  deviceId           String
+  device             Device    @relation(fields: [deviceId], references: [id])
+  sortOrder          Int       @default(0)
+  outboundScannedAt  DateTime?
+  outboundUserId     String?
+  outboundUserName   String?
+  inboundScannedAt   DateTime?
+  inboundUserId      String?
+  inboundUserName    String?
+  outboundMovementId String?
+  inboundMovementId  String?
+  createdAt          DateTime  @default(now())
+
+  @@unique([eventId, deviceId])
+  @@index([eventId])
+}
+
+model EventScan {
+  id             String     @id @default(cuid())
+  eventId        String
+  event          Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  deviceId       String
+  phase          EventPhase
+  userId         String
+  userName       String
+  success        Boolean
+  message        String?    @db.VarChar(500)
+  deviceLocation String?    @db.VarChar(64)
+  createdAt      DateTime   @default(now())
+
+  @@index([eventId, phase])
+  @@index([createdAt])
 }

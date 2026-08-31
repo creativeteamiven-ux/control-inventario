@@ -21,6 +21,8 @@ const Users = lazyWithRetry(() => import('@/pages/Users'));
 const Settings = lazyWithRetry(() => import('@/pages/Settings'));
 const Audit = lazyWithRetry(() => import('@/pages/Audit'));
 const Trash = lazyWithRetry(() => import('@/pages/Trash'));
+const Events = lazyWithRetry(() => import('@/pages/Events'));
+const EventDetail = lazyWithRetry(() => import('@/pages/EventDetail'));
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -98,6 +100,22 @@ function AppRoutes() {
         <Route path="maintenance" element={<Maintenance />} />
         <Route path="loans" element={<Loans />} />
         <Route path="movements" element={<Movements />} />
+        <Route
+          path="events"
+          element={
+            <PermissionRoute permission="events.view">
+              <Events />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="events/:id"
+          element={
+            <PermissionRoute permission="events.view">
+              <EventDetail />
+            </PermissionRoute>
+          }
+        />
         <Route path="locations" element={<Locations />} />
         <Route path="reports" element={<Reports />} />
         <Route

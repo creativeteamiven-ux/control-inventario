@@ -29,6 +29,7 @@ import expensesRouter from './routes/expenses.js';
 import budgetsRouter from './routes/budgets.js';
 import alertsRouter from './routes/alerts.js';
 import auditRouter from './routes/audit.js';
+import eventsRouter from './routes/events.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { startAlertScheduler } from './lib/scheduler.js';
 
@@ -180,6 +181,7 @@ app.use('/api/expenses', expensesRouter);
 app.use('/api/budgets', budgetsRouter);
 app.use('/api/alerts', alertsRouter);
 app.use('/api/audit', auditRouter);
+app.use('/api/events', eventsRouter);
 
 // Archivos estáticos (uploads)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
