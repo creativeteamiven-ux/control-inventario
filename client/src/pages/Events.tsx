@@ -20,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from '@/components/ui/dialog';
 
 interface EventSummary {
@@ -117,7 +118,10 @@ export default function Events() {
       resetForm();
       window.location.href = `/events/${data.id}`;
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error al crear';
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
+        || (err as { response?: { status?: number } })?.response?.status === 403
+          ? 'Sin permiso para crear eventos. Cierra sesión y vuelve a entrar, o pide a un admin que active "Gestionar eventos".'
+          : 'Error al crear';
       toast.error(msg);
     } finally {
       setCreating(false);
@@ -239,6 +243,9 @@ export default function Events() {
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Nuevo evento</DialogTitle>
+            <DialogDescription>
+              Define el evento, el origen de los equipos y el destino (habitual o temporal).
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>

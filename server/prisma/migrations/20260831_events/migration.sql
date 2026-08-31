@@ -1,5 +1,6 @@
 -- Eventos con checklist de salida/entrada por escaneo
-CREATE TABLE `Event` (
+-- Tabla InventoryEvent (evita palabra reservada EVENT en MySQL/TiDB)
+CREATE TABLE `InventoryEvent` (
     `id` VARCHAR(191) NOT NULL,
     `name` VARCHAR(191) NOT NULL,
     `eventDate` DATETIME(3) NOT NULL,
@@ -12,12 +13,12 @@ CREATE TABLE `Event` (
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
-    INDEX `Event_status_idx`(`status`),
-    INDEX `Event_eventDate_idx`(`eventDate`),
+    INDEX `InventoryEvent_status_idx`(`status`),
+    INDEX `InventoryEvent_eventDate_idx`(`eventDate`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-CREATE TABLE `EventItem` (
+CREATE TABLE `InventoryEventItem` (
     `id` VARCHAR(191) NOT NULL,
     `eventId` VARCHAR(191) NOT NULL,
     `deviceId` VARCHAR(191) NOT NULL,
@@ -32,12 +33,12 @@ CREATE TABLE `EventItem` (
     `inboundMovementId` VARCHAR(191) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    INDEX `EventItem_eventId_idx`(`eventId`),
-    UNIQUE INDEX `EventItem_eventId_deviceId_key`(`eventId`, `deviceId`),
+    INDEX `InventoryEventItem_eventId_idx`(`eventId`),
+    UNIQUE INDEX `InventoryEventItem_eventId_deviceId_key`(`eventId`, `deviceId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-CREATE TABLE `EventScan` (
+CREATE TABLE `InventoryEventScan` (
     `id` VARCHAR(191) NOT NULL,
     `eventId` VARCHAR(191) NOT NULL,
     `deviceId` VARCHAR(191) NOT NULL,
@@ -49,11 +50,11 @@ CREATE TABLE `EventScan` (
     `deviceLocation` VARCHAR(64) NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    INDEX `EventScan_eventId_phase_idx`(`eventId`, `phase`),
-    INDEX `EventScan_createdAt_idx`(`createdAt`),
+    INDEX `InventoryEventScan_eventId_phase_idx`(`eventId`, `phase`),
+    INDEX `InventoryEventScan_createdAt_idx`(`createdAt`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-ALTER TABLE `EventItem` ADD CONSTRAINT `EventItem_eventId_fkey` FOREIGN KEY (`eventId`) REFERENCES `Event`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE `EventItem` ADD CONSTRAINT `EventItem_deviceId_fkey` FOREIGN KEY (`deviceId`) REFERENCES `Device`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE `EventScan` ADD CONSTRAINT `EventScan_eventId_fkey` FOREIGN KEY (`eventId`) REFERENCES `Event`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `InventoryEventItem` ADD CONSTRAINT `InventoryEventItem_eventId_fkey` FOREIGN KEY (`eventId`) REFERENCES `InventoryEvent`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `InventoryEventItem` ADD CONSTRAINT `InventoryEventItem_deviceId_fkey` FOREIGN KEY (`deviceId`) REFERENCES `Device`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `InventoryEventScan` ADD CONSTRAINT `InventoryEventScan_eventId_fkey` FOREIGN KEY (`eventId`) REFERENCES `InventoryEvent`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;

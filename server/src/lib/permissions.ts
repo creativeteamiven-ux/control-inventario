@@ -64,12 +64,16 @@ const ROLE_DEFAULTS: Record<string, string[]> = {
 };
 
 export function getEffectivePermissions(role: string, permissionsJson: unknown): string[] {
+  const roleDefaults = ROLE_DEFAULTS[role] ?? ROLE_DEFAULTS.VIEWER;
   const arr = Array.isArray(permissionsJson) ? permissionsJson : null;
   const parsed = arr && arr.every((x) => typeof x === 'string') ? (arr as string[]) : null;
-  if (parsed !== null && parsed !== undefined) {
-    return parsed;
+  if (parsed === null || parsed.length === 0) return roleDefaults;
+  // Si el usuario tiene permisos personalizados, incluir claves nuevas del rol (ej. events.*)
+  const merged = new Set(parsed);
+  for (const key of roleDefaults) {
+    if (key.startsWith('events.')) merged.add(key);
   }
-  return ROLE_DEFAULTS[role] ?? ROLE_DEFAULTS.VIEWER;
+  return [...merged];
 }
 
 export function getDefaultPermissionsForRole(role: string): string[] {

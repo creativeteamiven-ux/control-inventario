@@ -293,6 +293,7 @@ model Event {
 
   @@index([status])
   @@index([eventDate])
+  @@map("InventoryEvent")
 }
 
 model EventItem {
@@ -314,6 +315,7 @@ model EventItem {
 
   @@unique([eventId, deviceId])
   @@index([eventId])
+  @@map("InventoryEventItem")
 }
 
 model EventScan {
@@ -331,4 +333,5 @@ model EventScan {
 
   @@index([eventId, phase])
   @@index([createdAt])
+  @@map("InventoryEventScan")
 }
