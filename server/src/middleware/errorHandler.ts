@@ -37,6 +37,12 @@ export function errorHandler(
   }
   console.error('[Error 500]', err.message);
   console.error(err.stack);
+  const prismaCode = (err as { code?: string }).code;
+  if (prismaCode === 'P2021' || prismaCode === 'P2022') {
+    return res.status(503).json({
+      error: 'Faltan tablas en la base de datos. Espera unos minutos al reinicio del servidor o contacta al administrador.',
+    });
+  }
   const message = process.env.NODE_ENV !== 'production' ? err.message : 'Error interno del servidor';
   res.status(500).json({ error: message });
 }

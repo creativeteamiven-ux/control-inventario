@@ -32,6 +32,7 @@ import auditRouter from './routes/audit.js';
 import eventsRouter from './routes/events.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { startAlertScheduler } from './lib/scheduler.js';
+import { ensureEventTables } from './lib/ensureEventTables.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // En Vercel (Root Directory = server) no hay carpeta padre; cargar .env desde el mismo directorio que index.js
@@ -139,7 +140,15 @@ app.get('/api/health', async (_req, res) => {
   }
   try {
     await prisma.$queryRaw`SELECT 1`;
-    res.json({ ok: true, db: 'connected' });
+    let eventsReady = false;
+    try {
+      await prisma.event.count();
+      eventsReady = true;
+    } catch (evErr) {
+      const msg = (evErr as Error).message;
+      return res.status(503).json({ ok: false, db: 'connected', events: 'missing', message: msg });
+    }
+    res.json({ ok: true, db: 'connected', events: eventsReady ? 'ready' : 'missing' });
   } catch (e) {
     const err = e as Error;
     console.error('[Health] DB error:', err.message);
@@ -203,9 +212,18 @@ export default app;
 
 if (!process.env.VERCEL) {
   const host = process.env.RENDER ? '0.0.0.0' : 'localhost';
-  app.listen(PORT, host, () => {
-    console.log(`🚀 The Warehouse API running on http://${host}:${PORT}`);
-    // Programador de resúmenes por correo (entornos always-on: local/Render).
-    startAlertScheduler(new PrismaClient());
-  });
+  const boot = async () => {
+    try {
+      console.log('[DB] Verificando tablas de eventos...');
+      await ensureEventTables(prisma);
+      console.log('[DB] Tablas de eventos OK');
+    } catch (err) {
+      console.error('[DB] Error creando tablas de eventos:', (err as Error).message);
+    }
+    app.listen(PORT, host, () => {
+      console.log(`🚀 The Warehouse API running on http://${host}:${PORT}`);
+      startAlertScheduler(new PrismaClient());
+    });
+  };
+  void boot();
 }
