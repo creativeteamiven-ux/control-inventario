@@ -28,7 +28,19 @@ import { useAuth } from '@/hooks/useAuth';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useLocations } from '@/hooks/useLocations';
 
-const READER_ID = 'qr-reader';
+const READER_ID = 'barcode-reader';
+
+/** Formatos 1D priorizados: CODE128 es el de nuestras etiquetas; el resto cubre series de fábrica. */
+const BARCODE_FORMATS = [
+  Html5QrcodeSupportedFormats.CODE_128,
+  Html5QrcodeSupportedFormats.CODE_39,
+  Html5QrcodeSupportedFormats.EAN_13,
+  Html5QrcodeSupportedFormats.EAN_8,
+  Html5QrcodeSupportedFormats.UPC_A,
+  Html5QrcodeSupportedFormats.UPC_E,
+  Html5QrcodeSupportedFormats.ITF,
+  Html5QrcodeSupportedFormats.CODABAR,
+];
 
 const STATUS_BADGE: Record<string, string> = {
   ACTIVE: 'bg-green-500/20 text-green-400',
@@ -39,7 +51,6 @@ const STATUS_BADGE: Record<string, string> = {
   RETIRED: 'bg-slate-500/20 text-slate-400',
 };
 
-// Estados que se pueden asignar con un toque desde el escáner.
 const QUICK_STATUSES: { value: string; label: string; className: string }[] = [
   { value: 'ACTIVE', label: 'Operativo', className: 'border-green-500/40 text-green-400 hover:bg-green-500/10' },
   { value: 'MAINTENANCE', label: 'Mantenimiento', className: 'border-amber-500/40 text-amber-400 hover:bg-amber-500/10' },
@@ -51,11 +62,17 @@ interface CameraOption {
   label: string;
 }
 
-// Elige la cámara por defecto: trasera en móvil, o la única disponible en un computador/portátil.
 function pickDefaultCamera(cams: CameraOption[]): string | undefined {
   if (!cams.length) return undefined;
   const back = cams.find((c) => /back|rear|environment|trasera|posterior/i.test(c.label));
   return (back ?? cams[cams.length - 1]).id;
+}
+
+/** Zona de escaneo ancha y baja, ideal para códigos de barras horizontales. */
+function barcodeScanBox(viewW: number, viewH: number) {
+  const width = Math.floor(viewW * 0.92);
+  const height = Math.floor(Math.min(viewH * 0.32, 140));
+  return { width, height };
 }
 
 interface ScannedDevice {
@@ -83,6 +100,7 @@ export default function Scanner() {
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isStartingRef = useRef(false);
+  const lastScanRef = useRef<{ code: string; at: number } | null>(null);
 
   const [scanning, setScanning] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -111,21 +129,34 @@ export default function Scanner() {
     setScanning(false);
   }, []);
 
-  const lookup = useCallback(
-    async (code: string) => {
-      setLooking(true);
-      setDevice(null);
-      setNotFoundCode(null);
-      try {
-        const { data } = await api.get<ScannedDevice>('/api/devices/lookup', { params: { code } });
-        setDevice(data);
-      } catch {
-        setNotFoundCode(code);
-      } finally {
-        setLooking(false);
-      }
+  const lookup = useCallback(async (code: string) => {
+    setLooking(true);
+    setDevice(null);
+    setNotFoundCode(null);
+    try {
+      const { data } = await api.get<ScannedDevice>('/api/devices/lookup', { params: { code } });
+      setDevice(data);
+    } catch {
+      setNotFoundCode(code);
+    } finally {
+      setLooking(false);
+    }
+  }, []);
+
+  const handleScan = useCallback(
+    async (decodedText: string) => {
+      const code = decodedText.trim();
+      if (!code) return;
+
+      const now = Date.now();
+      const prev = lastScanRef.current;
+      if (prev && prev.code === code && now - prev.at < 2500) return;
+      lastScanRef.current = { code, at: now };
+
+      await stopCamera();
+      await lookup(code);
     },
-    []
+    [stopCamera, lookup]
   );
 
   const startCamera = useCallback(
@@ -144,9 +175,9 @@ export default function Scanner() {
       setCameraError(null);
       setDevice(null);
       setNotFoundCode(null);
+      lastScanRef.current = null;
       isStartingRef.current = true;
       try {
-        // Enumerar cámaras (también solicita el permiso). Sirve para webcams de PC/portátil y para elegir cámara.
         let cams = cameras;
         if (!cams.length) {
           try {
@@ -162,36 +193,39 @@ export default function Scanner() {
 
         const html5 = new Html5Qrcode(READER_ID, {
           verbose: false,
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.QR_CODE,
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.CODE_39,
-            Html5QrcodeSupportedFormats.CODE_93,
-            Html5QrcodeSupportedFormats.CODABAR,
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
-            Html5QrcodeSupportedFormats.ITF,
-            Html5QrcodeSupportedFormats.DATA_MATRIX,
-          ],
+          formatsToSupport: BARCODE_FORMATS,
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
         });
         scannerRef.current = html5;
-        // Si hay un id de cámara se usa; si no (sin permiso de enumerar), se cae a facingMode.
-        const cameraSource: string | { facingMode: string } = camId ?? { facingMode: 'environment' };
+
+        const cameraSource: string | MediaTrackConstraints = camId
+          ? camId
+          : {
+              facingMode: { ideal: 'environment' },
+              width: { min: 640, ideal: 1920 },
+              height: { min: 480, ideal: 1080 },
+            };
+
         await html5.start(
           cameraSource,
           {
-            fps: 10,
-            qrbox: (viewW: number, viewH: number) => {
-              const min = Math.min(viewW, viewH);
-              const width = Math.floor(min * 0.8);
-              return { width, height: Math.floor(width * 0.65) };
-            },
+            fps: 20,
+            qrbox: barcodeScanBox,
+            disableFlip: false,
+            videoConstraints: camId
+              ? {
+                  deviceId: { exact: camId },
+                  width: { min: 640, ideal: 1920 },
+                  height: { min: 480, ideal: 1080 },
+                }
+              : {
+                  facingMode: { ideal: 'environment' },
+                  width: { min: 640, ideal: 1920 },
+                  height: { min: 480, ideal: 1080 },
+                },
           },
-          async (decodedText) => {
-            await stopCamera();
-            await lookup(decodedText.trim());
+          (decodedText) => {
+            void handleScan(decodedText);
           },
           () => {
             /* fallo de lectura por frame: ignorar */
@@ -212,7 +246,7 @@ export default function Scanner() {
         isStartingRef.current = false;
       }
     },
-    [secureContext, cameras, selectedCameraId, stopCamera, lookup]
+    [secureContext, cameras, selectedCameraId, handleScan]
   );
 
   const switchCamera = useCallback(
@@ -230,7 +264,6 @@ export default function Scanner() {
     };
   }, [stopCamera]);
 
-  // Al cambiar el equipo, reflejar si ya está en el carrito de traslado.
   useEffect(() => {
     setAddedToCart(device ? getStoredCart().some((d) => d.id === device.id) : false);
   }, [device]);
@@ -246,6 +279,7 @@ export default function Scanner() {
     setDevice(null);
     setNotFoundCode(null);
     setCameraError(null);
+    lastScanRef.current = null;
     await startCamera();
   }, [startCamera]);
 
@@ -272,15 +306,21 @@ export default function Scanner() {
           <ScanLine className="h-6 w-6 text-primary" /> Escanear equipo
         </h1>
         <p className="text-sm text-muted mt-1">
-          Apunta la cámara (del celular o webcam del computador) al código QR o al número de serie
-          (código de barras) del equipo.
+          Apunta la cámara al código de barras de la etiqueta o al número de serie del equipo. Mantén el código
+          dentro del recuadro y a unos 15–25 cm de distancia.
         </p>
       </div>
 
-      {/* Visor de cámara */}
       <div className="bg-card rounded-xl border border-border overflow-hidden">
         <div className="relative bg-black aspect-[4/3] flex items-center justify-center">
           <div id={READER_ID} className="w-full h-full [&_video]:h-full [&_video]:w-full [&_video]:object-cover" />
+          {scanning && (
+            <div className="absolute bottom-3 left-0 right-0 text-center pointer-events-none">
+              <span className="text-xs text-white/80 bg-black/50 px-3 py-1 rounded-full">
+                Alinea el código de barras en el recuadro
+              </span>
+            </div>
+          )}
           {!scanning && !looking && !device && !notFoundCode && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center">
               {cameraError ? (
@@ -334,7 +374,6 @@ export default function Scanner() {
         )}
       </div>
 
-      {/* Resultado: equipo encontrado */}
       {device && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -398,7 +437,6 @@ export default function Scanner() {
             )}
           </dl>
 
-          {/* Cambio rápido de estado */}
           {canEdit && (
             <div className="p-4 border-t border-border">
               <p className="text-xs text-muted mb-2">Cambiar estado</p>
@@ -420,7 +458,6 @@ export default function Scanner() {
             </div>
           )}
 
-          {/* Carrito de traslado */}
           <div className="p-4 border-t border-border">
             <Button
               variant={addedToCart ? 'outline' : 'default'}
@@ -440,7 +477,6 @@ export default function Scanner() {
             </Button>
           </div>
 
-          {/* Acciones */}
           <div className="p-4 border-t border-border flex flex-col sm:flex-row gap-2">
             <Button className="flex-1 min-h-touch" onClick={() => navigate(`/inventory/${device.id}`)}>
               <ArrowRight className="h-4 w-4 mr-2" /> Ver ficha completa
@@ -461,7 +497,6 @@ export default function Scanner() {
         </motion.div>
       )}
 
-      {/* Resultado: no encontrado */}
       {notFoundCode && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}

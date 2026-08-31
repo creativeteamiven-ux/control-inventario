@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Package, Grid3X3, List, Plus, Search, Download, Upload, Truck, FolderTree, AlertCircle, CheckCircle, XCircle, MapPin, SlidersHorizontal, QrCode, Trash2 } from 'lucide-react';
+import { Package, Grid3X3, List, Plus, Search, Download, Upload, Truck, FolderTree, AlertCircle, CheckCircle, XCircle, MapPin, SlidersHorizontal, Barcode, Trash2 } from 'lucide-react';
 import { addToStoredCart, addManyToStoredCart, getStoredCart } from '@/lib/transferCart';
 import { api } from '@/lib/api';
 import AddDeviceModal from '@/components/AddDeviceModal';
@@ -99,10 +99,10 @@ export default function Inventory() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'etiquetas-qr-thewarehouse.pdf';
+      a.download = 'etiquetas-barras-thewarehouse.pdf';
       a.click();
       URL.revokeObjectURL(url);
-      toast.success('Etiquetas QR generadas');
+      toast.success('Etiquetas con código de barras generadas');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error al generar etiquetas';
       toast.error(msg);
@@ -515,9 +515,9 @@ export default function Inventory() {
             <Download className="h-4 w-4 mr-2" />
             Plantilla
           </Button>
-          <Button variant="outline" onClick={() => downloadLabels(false)} title="Genera una hoja PDF con las etiquetas QR de todos los equipos">
-            <QrCode className="h-4 w-4 mr-2" />
-            Etiquetas QR
+          <Button variant="outline" onClick={() => downloadLabels(false)} title="Genera una hoja PDF con etiquetas de código de barras de todos los equipos">
+            <Barcode className="h-4 w-4 mr-2" />
+            Etiquetas de barras
           </Button>
           <div className="relative">
             <input
@@ -563,8 +563,8 @@ export default function Inventory() {
             Plantilla mantenimiento
           </Button>
           <Button variant="outline" size="sm" onClick={() => downloadLabels(true)}>
-            <QrCode className="h-4 w-4 mr-2" />
-            Etiquetas QR
+            <Barcode className="h-4 w-4 mr-2" />
+            Etiquetas de barras
           </Button>
           <Button variant="ghost" size="sm" onClick={clearSelection}>
             Limpiar selección

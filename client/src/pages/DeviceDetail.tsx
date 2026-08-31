@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Package, Pencil, QrCode, TrendingDown, Trash2, ImagePlus, X, Download, Star, ZoomIn } from 'lucide-react';
+import { ArrowLeft, Package, Pencil, Barcode, TrendingDown, Trash2, ImagePlus, X, Download, Star, ZoomIn } from 'lucide-react';
 import toast from 'react-hot-toast';
 import EditDeviceModal from '@/components/EditDeviceModal';
 import { api } from '@/lib/api';
@@ -58,11 +58,11 @@ export default function DeviceDetail() {
     enabled: !!id,
   });
 
-  const { data: qrData } = useQuery({
-    queryKey: ['device-qr', id],
+  const { data: barcodeData } = useQuery({
+    queryKey: ['device-barcode', id],
     queryFn: async () => {
       const { data } = await api.get(`/api/devices/${id}/qr`);
-      return data;
+      return data as { barcode?: string; qrCode?: string; code?: string };
     },
     enabled: !!id,
   });
@@ -152,11 +152,12 @@ export default function DeviceDetail() {
     }
   };
 
-  const downloadQr = () => {
-    if (!qrData?.qrCode) return;
+  const downloadBarcode = () => {
+    const img = barcodeData?.barcode ?? barcodeData?.qrCode;
+    if (!img) return;
     const a = document.createElement('a');
-    a.href = qrData.qrCode;
-    a.download = `qr-${d.internalCode}.png`;
+    a.href = img;
+    a.download = `barcode-${d.internalCode}.png`;
     a.click();
   };
 
@@ -532,19 +533,24 @@ export default function DeviceDetail() {
         <div>
           <div className="bg-card rounded-xl border border-border p-6 sticky top-24">
             <h2 className="font-display font-semibold text-lg mb-4 flex items-center gap-2">
-              <QrCode className="h-5 w-5" /> Código QR
+              <Barcode className="h-5 w-5" /> Código de barras
             </h2>
-            {qrData?.qrCode ? (
+            {(barcodeData?.barcode ?? barcodeData?.qrCode) ? (
               <div className="flex flex-col items-center">
-                <img src={qrData.qrCode} alt="QR" className="w-48 h-48 rounded-lg bg-white p-2" />
-                <p className="text-sm text-muted mt-2">Escanea para ver la ficha del equipo</p>
-                <Button variant="outline" size="sm" className="mt-4" onClick={downloadQr}>
+                <img
+                  src={barcodeData?.barcode ?? barcodeData?.qrCode}
+                  alt={`Código de barras ${d.internalCode}`}
+                  className="w-full max-w-xs rounded-lg bg-white p-3"
+                />
+                <p className="text-sm text-muted mt-2 font-mono">{d.internalCode}</p>
+                <p className="text-xs text-muted mt-1">Escanea para identificar el equipo al instante</p>
+                <Button variant="outline" size="sm" className="mt-4" onClick={downloadBarcode}>
                   <Download className="h-4 w-4 mr-2" />
-                  Descargar QR
+                  Descargar código de barras
                 </Button>
               </div>
             ) : (
-              <p className="text-muted text-sm">Generando código QR...</p>
+              <p className="text-muted text-sm">Generando código de barras...</p>
             )}
           </div>
         </div>

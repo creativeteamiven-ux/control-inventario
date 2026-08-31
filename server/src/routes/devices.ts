@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import QRCode from 'qrcode';
+import { generateBarcodeBuffer, generateBarcodeDataUrl } from '../lib/barcode.js';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -15,7 +15,6 @@ import { assertLocationCode, ensureOnLoanCode } from '../lib/locations.js';
 const router = Router();
 const prisma = new PrismaClient();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const BASE_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
 router.use(authenticate);
 
@@ -90,7 +89,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// Búsqueda rápida para el escáner: acepta número de serie, código interno, id o una URL de QR.
+// Búsqueda rápida para el escáner: acepta número de serie, código interno, id o URL legacy de QR.
 router.get('/lookup', async (req, res, next) => {
   try {
     let raw = String(req.query.code ?? '').trim();
@@ -121,7 +120,7 @@ router.get('/lookup', async (req, res, next) => {
   }
 });
 
-// Hoja de etiquetas QR para imprimir (varios equipos). ?ids=a,b,c  (si no se pasan ids, usa todos).
+// Hoja de etiquetas con código de barras para imprimir. ?ids=a,b,c  (si no se pasan ids, usa todos).
 router.get('/labels', async (req, res, next) => {
   try {
     const idsParam = (req.query.ids as string | undefined)?.split(',').map((s) => s.trim()).filter(Boolean);
@@ -134,7 +133,6 @@ router.get('/labels', async (req, res, next) => {
       take: 500,
     });
     if (devices.length === 0) throw new AppError(404, 'No hay equipos para generar etiquetas');
-    const base = BASE_URL.split(',')[0].trim();
 
     const doc = new PDFDocument({ size: 'A4', margin: 28 });
     const chunks: Buffer[] = [];
@@ -150,7 +148,8 @@ router.get('/labels', async (req, res, next) => {
     const pageW = doc.page.width - 56;
     const cellW = pageW / cols;
     const cellH = (doc.page.height - 56) / rows;
-    const qrSize = 90;
+    const barcodeW = cellW - 28;
+    const barcodeH = 52;
 
     let i = 0;
     for (const d of devices) {
@@ -163,22 +162,22 @@ router.get('/labels', async (req, res, next) => {
 
       doc.roundedRect(x + 4, y + 4, cellW - 8, cellH - 8, 6).strokeColor('#e2e8f0').lineWidth(1).stroke();
 
-      const qrBuf = await QRCode.toBuffer(`${base}/device/${d.id}`, { width: 240, margin: 1 });
-      doc.image(qrBuf, x + 14, y + 16, { width: qrSize, height: qrSize });
+      const barcodeBuf = await generateBarcodeBuffer(d.internalCode);
+      doc.image(barcodeBuf, x + 14, y + 14, { width: barcodeW, height: barcodeH });
 
-      const textX = x + 14 + qrSize + 12;
-      const textW = cellW - (qrSize + 40);
-      doc.fillColor('#0f172a').fontSize(13).font('Helvetica-Bold').text(d.internalCode, textX, y + 22, { width: textW });
-      doc.fillColor('#334155').fontSize(10).font('Helvetica').text(String(d.name).slice(0, 40), textX, y + 42, { width: textW });
-      if (d.brand) doc.fillColor('#64748b').fontSize(9).text(String(d.brand).slice(0, 30), textX, y + 60, { width: textW });
-      doc.fillColor('#94a3b8').fontSize(7).text('The Warehouse', textX, y + cellH - 26, { width: textW });
+      const textX = x + 14;
+      const textW = cellW - 28;
+      doc.fillColor('#0f172a').fontSize(12).font('Helvetica-Bold').text(d.internalCode, textX, y + 72, { width: textW, align: 'center' });
+      doc.fillColor('#334155').fontSize(9).font('Helvetica').text(String(d.name).slice(0, 42), textX, y + 88, { width: textW, align: 'center' });
+      if (d.brand) doc.fillColor('#64748b').fontSize(8).text(String(d.brand).slice(0, 32), textX, y + 102, { width: textW, align: 'center' });
+      doc.fillColor('#94a3b8').fontSize(7).text('The Warehouse', textX, y + cellH - 18, { width: textW, align: 'center' });
       i++;
     }
 
     doc.end();
     const pdf = await pdfPromise;
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename=etiquetas-qr-thewarehouse.pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=etiquetas-barras-thewarehouse.pdf');
     res.send(pdf);
   } catch (e) {
     next(e);
@@ -472,16 +471,12 @@ router.get('/:id/qr', async (req, res, next) => {
       select: { id: true, internalCode: true, qrCode: true, isQrGenerated: true },
     });
     if (!device) throw new AppError(404, 'Equipo no encontrado');
-    const url = `${BASE_URL}/device/${device.id}`;
-    if (device.isQrGenerated && device.qrCode) {
-      return res.json({ qrCode: device.qrCode, url });
-    }
-    const qrDataUrl = await QRCode.toDataURL(url, { width: 300 });
+    const barcodeDataUrl = await generateBarcodeDataUrl(device.internalCode);
     await prisma.device.update({
       where: { id: device.id },
-      data: { qrCode: qrDataUrl, isQrGenerated: true },
+      data: { qrCode: barcodeDataUrl, isQrGenerated: true },
     });
-    res.json({ qrCode: qrDataUrl, url });
+    res.json({ barcode: barcodeDataUrl, qrCode: barcodeDataUrl, code: device.internalCode });
   } catch (e) {
     next(e);
   }
