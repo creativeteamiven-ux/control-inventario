@@ -1,9 +1,9 @@
+import { prisma } from '../lib/prisma.js';
 import { Router } from 'express';
 import { barcodeTextForDevice, generateBarcodeBuffer, generateBarcodeDataUrl } from '../lib/barcode.js';
 import PDFDocument from 'pdfkit';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { PrismaClient } from '@prisma/client';
 import { createDeviceSchema, updateDeviceSchema, deviceFilterSchema } from '@soundvault/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
@@ -13,7 +13,6 @@ import { computeDepreciation } from '../lib/depreciation.js';
 import { assertLocationCode, ensureOnLoanCode } from '../lib/locations.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 router.use(authenticate);
@@ -30,7 +29,7 @@ function getNextInternalCode(prefix: string): Promise<string> {
     });
 }
 
-router.get('/', async (req, res, next) => {
+router.get('/', requirePermission('inventory.view'), async (req, res, next) => {
   try {
     const parsed = deviceFilterSchema.safeParse({
       ...req.query,
@@ -90,7 +89,7 @@ router.get('/', async (req, res, next) => {
 });
 
 // Búsqueda rápida para el escáner: acepta número de serie, código interno, id o URL legacy de QR.
-router.get('/lookup', async (req, res, next) => {
+router.get('/lookup', requirePermission('inventory.view'), async (req, res, next) => {
   try {
     let raw = String(req.query.code ?? '').trim();
     if (!raw) throw new AppError(400, 'Indica un código para buscar');
@@ -121,7 +120,7 @@ router.get('/lookup', async (req, res, next) => {
 });
 
 // Hoja de etiquetas con código de barras para imprimir. ?ids=a,b,c  (si no se pasan ids, usa todos).
-router.get('/labels', async (req, res, next) => {
+router.get('/labels', requirePermission('inventory.export'), async (req, res, next) => {
   try {
     const idsParam = (req.query.ids as string | undefined)?.split(',').map((s) => s.trim()).filter(Boolean);
     const where: Record<string, unknown> = { deletedAt: null };
@@ -224,12 +223,18 @@ router.delete('/:id/permanent', requirePermission('inventory.delete'), async (re
     if (!existing) throw new AppError(404, 'Equipo no encontrado');
     if (!existing.deletedAt) throw new AppError(400, 'Primero da de baja el equipo (papelera) para borrarlo del todo.');
     await prisma.$transaction(async (tx) => {
+      await tx.eventScan.deleteMany({ where: { deviceId: existing.id } });
+      await tx.eventItem.deleteMany({ where: { deviceId: existing.id } });
       await tx.movement.deleteMany({ where: { deviceId: existing.id } });
       await tx.maintenance.deleteMany({ where: { deviceId: existing.id } });
       await tx.loanRecord.deleteMany({ where: { deviceId: existing.id } });
       await tx.deviceImage.deleteMany({ where: { deviceId: existing.id } });
       await tx.document.deleteMany({ where: { deviceId: existing.id } });
       await tx.expense.updateMany({ where: { deviceId: existing.id }, data: { deviceId: null } });
+      await tx.device.update({
+        where: { id: existing.id },
+        data: { tags: { set: [] } },
+      });
       await tx.device.delete({ where: { id: existing.id } });
     });
     await writeAudit(req, 'Device', existing.id, 'DELETE', { permanent: true, name: existing.name });
@@ -239,7 +244,7 @@ router.delete('/:id/permanent', requirePermission('inventory.delete'), async (re
   }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', requirePermission('inventory.view'), async (req, res, next) => {
   try {
     const device = await prisma.device.findFirst({
       where: { id: req.params.id, deletedAt: null },
@@ -452,7 +457,7 @@ router.delete('/:id', requirePermission('inventory.delete'), async (req: AuthReq
   }
 });
 
-router.get('/:id/movements', async (req, res, next) => {
+router.get('/:id/movements', requirePermission('inventory.view'), async (req, res, next) => {
   try {
     const movements = await prisma.movement.findMany({
       where: { deviceId: req.params.id },
@@ -466,7 +471,7 @@ router.get('/:id/movements', async (req, res, next) => {
   }
 });
 
-router.get('/:id/qr', async (req, res, next) => {
+router.get('/:id/qr', requirePermission('inventory.view'), async (req, res, next) => {
   try {
     const device = await prisma.device.findFirst({
       where: { id: req.params.id, deletedAt: null },

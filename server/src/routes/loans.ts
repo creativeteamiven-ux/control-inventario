@@ -1,17 +1,17 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { createLoanSchema, returnLoanSchema } from '@soundvault/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { defaultStorageCode, ensureOnLoanCode } from '../lib/locations.js';
 
+import { prisma } from '../lib/prisma.js';
+
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(authenticate);
 
-router.get('/', async (req, res, next) => {
+router.get('/', requirePermission('loans.view'), async (req, res, next) => {
   try {
     const status = req.query.status as string | undefined;
     const where: Record<string, unknown> = {};
@@ -29,7 +29,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', requirePermission('loans.view'), async (req, res, next) => {
   try {
     const item = await prisma.loanRecord.findUnique({
       where: { id: req.params.id },

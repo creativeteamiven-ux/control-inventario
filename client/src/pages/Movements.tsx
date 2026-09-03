@@ -198,36 +198,39 @@ export default function Movements() {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="font-display text-2xl font-bold text-foreground">Movimientos</h1>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setPickerOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Agregar equipos
-            {cart.length > 0 && (
-              <span className="ml-2 px-1.5 py-0.5 rounded-full bg-primary/20 text-primary text-xs font-medium">
-                {cart.length}
-              </span>
-            )}
-          </Button>
-          <Button variant="outline" onClick={downloadTemplate}>
-            <Download className="h-4 w-4 mr-2" />
-            {cart.length > 0 ? 'Descargar plantilla con carrito' : 'Plantilla traslados'}
-          </Button>
-          <div className="relative">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleImport}
-              disabled={importing}
-            />
-            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}>
-              <Upload className="h-4 w-4 mr-2" />
-              {importing ? 'Importando...' : 'Importar traslados'}
+        {canManage && (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setPickerOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Agregar equipos
+              {cart.length > 0 && (
+                <span className="ml-2 px-1.5 py-0.5 rounded-full bg-primary/20 text-primary text-xs font-medium">
+                  {cart.length}
+                </span>
+              )}
             </Button>
+            <Button variant="outline" onClick={downloadTemplate}>
+              <Download className="h-4 w-4 mr-2" />
+              {cart.length > 0 ? 'Descargar plantilla con carrito' : 'Plantilla traslados'}
+            </Button>
+            <div className="relative">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleImport}
+                disabled={importing}
+              />
+              <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+                <Upload className="h-4 w-4 mr-2" />
+                {importing ? 'Importando...' : 'Importar traslados'}
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
+      {canManage && (
       <TransferCart
         items={cart}
         onRemove={(id) => {
@@ -261,7 +264,8 @@ export default function Movements() {
           setSelectedCartIds(new Set());
         }}
       />
-      {cart.length > 0 && (
+      )}
+      {canManage && cart.length > 0 && (
         <div className="bg-card rounded-xl border border-border p-4 space-y-4">
           <h3 className="font-medium text-foreground">Registrar traslado en página</h3>
           <p className="text-sm text-muted">Completa los datos y registra el movimiento para los equipos del carrito sin usar plantilla Excel.</p>
@@ -323,6 +327,7 @@ export default function Movements() {
           </div>
         </div>
       )}
+      {canManage && (
       <DevicePickerModal
         open={pickerOpen}
         onOpenChange={setPickerOpen}
@@ -333,7 +338,8 @@ export default function Movements() {
           return [...prev, ...newOnes];
         })}
       />
-      {validationResult && (
+      )}
+      {canManage && validationResult && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => { if (!importing) { setValidationResult(null); setFileToImport(null); } }}>
           <div className="bg-card rounded-xl border border-border shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="p-4 border-b border-border flex items-center justify-between shrink-0">

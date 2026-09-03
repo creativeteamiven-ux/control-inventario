@@ -1,7 +1,7 @@
+import { prisma } from '../lib/prisma.js';
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
 import { loginSchema } from '@soundvault/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
@@ -9,7 +9,6 @@ import { getEffectivePermissions } from '../lib/permissions.js';
 import { writeAudit } from '../lib/audit.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'soundvault-secret-change-in-production';
 const REFRESH_SECRET = process.env.REFRESH_SECRET || 'soundvault-refresh-secret';
 const ACCESS_EXPIRY = '15m';

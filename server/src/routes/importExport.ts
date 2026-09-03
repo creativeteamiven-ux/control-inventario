@@ -1,15 +1,14 @@
 /**
  * Importaci?n masiva de equipos y traslados desde Excel
  */
+import { prisma } from '../lib/prisma.js';
 import { Router } from 'express';
 import multer from 'multer';
 import * as XLSX from 'xlsx';
-import { PrismaClient } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 router.use(authenticate);

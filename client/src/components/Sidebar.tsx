@@ -28,21 +28,21 @@ import { usePermissions } from '@/hooks/usePermissions';
 
 const navItems: { to: string; icon: typeof LayoutDashboard; label: string; perm?: string; roles?: string[] }[] = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/inventory', icon: Package, label: 'Inventario' },
+  { to: '/inventory', icon: Package, label: 'Inventario', perm: 'inventory.view' },
   { to: '/trash', icon: Trash2, label: 'Papelera', perm: 'inventory.delete' },
   { to: '/scan', icon: ScanLine, label: 'Escanear' },
-  { to: '/categories', icon: FolderTree, label: 'Categorías' },
+  { to: '/categories', icon: FolderTree, label: 'Categorías', perm: 'categories.view' },
   { to: '/locations', icon: MapPin, label: 'Lugares' },
-  { to: '/maintenance', icon: Wrench, label: 'Mantenimientos' },
-  { to: '/loans', icon: HandCoins, label: 'Préstamos' },
-  { to: '/movements', icon: ArrowLeftRight, label: 'Movimientos' },
+  { to: '/maintenance', icon: Wrench, label: 'Mantenimientos', perm: 'maintenance.view' },
+  { to: '/loans', icon: HandCoins, label: 'Préstamos', perm: 'loans.view' },
+  { to: '/movements', icon: ArrowLeftRight, label: 'Movimientos', perm: 'movements.view' },
   { to: '/events', icon: CalendarDays, label: 'Eventos', perm: 'events.view' },
-  { to: '/reports', icon: FileBarChart, label: 'Reportes' },
+  { to: '/reports', icon: FileBarChart, label: 'Reportes', perm: 'reports.view' },
   { to: '/expenses', icon: Receipt, label: 'Gastos', perm: 'finance.view' },
   { to: '/budgets', icon: PiggyBank, label: 'Presupuestos', perm: 'finance.view' },
   { to: '/audit', icon: ShieldCheck, label: 'Auditoría', roles: ['ADMIN', 'MANAGER'] },
-  { to: '/users', icon: Users, label: 'Usuarios' },
-  { to: '/settings', icon: Settings, label: 'Configuración' },
+  { to: '/users', icon: Users, label: 'Usuarios', perm: 'users.view' },
+  { to: '/settings', icon: Settings, label: 'Configuración', roles: ['ADMIN'] },
 ];
 
 interface SidebarProps {

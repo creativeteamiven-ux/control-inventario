@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, requireRole } from '../middleware/auth.js';
 
+import { prisma } from '../lib/prisma.js';
+
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(authenticate);
 // El registro de auditoría es sensible: solo ADMIN y MANAGER.

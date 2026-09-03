@@ -1,11 +1,11 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { writeAudit } from '../lib/audit.js';
 
+import { prisma } from '../lib/prisma.js';
+
 const router = Router();
-const prisma = new PrismaClient();
 
 const DEFAULT_LOCATIONS = [
   { code: 'MAIN_AUDITORIUM', name: 'Auditorio principal', sortOrder: 1 },

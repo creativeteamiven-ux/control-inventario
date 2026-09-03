@@ -1,23 +1,21 @@
+import { prisma } from '../lib/prisma.js';
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { PrismaClient } from '@prisma/client';
 import { createUserSchema, updateUserSchema } from '@soundvault/shared';
 import { AppError } from '../middleware/errorHandler.js';
-import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
+import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { getEffectivePermissions, getDefaultPermissionsForRole, PERMISSIONS } from '../lib/permissions.js';
 import { writeAudit } from '../lib/audit.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(authenticate);
-router.use(requireRole('ADMIN'));
 
-router.get('/permissions', (_req, res) => {
+router.get('/permissions', requirePermission('users.view'), (_req, res) => {
   res.json(PERMISSIONS);
 });
 
-router.get('/permission-defaults/:role', (req, res) => {
+router.get('/permission-defaults/:role', requirePermission('users.view'), (req, res) => {
   const role = req.params.role?.toUpperCase();
   if (!role || !['ADMIN', 'MANAGER', 'TECHNICIAN', 'VIEWER'].includes(role)) {
     return res.status(400).json({ error: 'Rol inválido' });
@@ -25,7 +23,20 @@ router.get('/permission-defaults/:role', (req, res) => {
   res.json(getDefaultPermissionsForRole(role));
 });
 
-router.get('/', async (req, res, next) => {
+/** Lista ligera para filtros (reportes, etc.) — no expone email ni permisos. */
+router.get('/names', requirePermission('reports.export'), async (_req, res, next) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    res.json(users);
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/', requirePermission('users.view'), async (_req, res, next) => {
   try {
     const users = await prisma.user.findMany({
       select: { id: true, name: true, email: true, role: true, permissions: true, avatar: true, phone: true, createdAt: true },
@@ -37,7 +48,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', requirePermission('users.view'), async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.params.id },
@@ -50,7 +61,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', requirePermission('users.create'), async (req: AuthRequest, res, next) => {
   try {
     const parsed = createUserSchema.safeParse(req.body);
     if (!parsed.success) throw new AppError(400, parsed.error.errors[0]?.message || 'Datos inválidos');
@@ -69,14 +80,14 @@ router.post('/', async (req, res, next) => {
       },
       select: { id: true, name: true, email: true, role: true, permissions: true },
     });
-    await writeAudit(req as AuthRequest, 'User', user.id, 'CREATE', { email: user.email, role: user.role });
+    await writeAudit(req, 'User', user.id, 'CREATE', { email: user.email, role: user.role });
     res.status(201).json(user);
   } catch (e) {
     next(e);
   }
 });
 
-router.patch('/:id', async (req, res, next) => {
+router.patch('/:id', requirePermission('users.edit'), async (req: AuthRequest, res, next) => {
   try {
     const parsed = updateUserSchema.safeParse(req.body);
     if (!parsed.success) throw new AppError(400, parsed.error.errors[0]?.message || 'Datos inválidos');
@@ -92,17 +103,34 @@ router.patch('/:id', async (req, res, next) => {
       data: update as Parameters<typeof prisma.user.update>[0]['data'],
       select: { id: true, name: true, email: true, role: true, permissions: true },
     });
-    await writeAudit(req as AuthRequest, 'User', user.id, 'UPDATE', { role: parsed.data.role });
+    await writeAudit(req, 'User', user.id, 'UPDATE', { role: parsed.data.role });
     res.json(user);
   } catch (e) {
     next(e);
   }
 });
 
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', requirePermission('users.delete'), async (req: AuthRequest, res, next) => {
   try {
-    await prisma.user.delete({ where: { id: req.params.id } });
-    await writeAudit(req as AuthRequest, 'User', req.params.id, 'DELETE');
+    const id = req.params.id;
+    if (id === req.user?.userId) {
+      throw new AppError(400, 'No puedes eliminar tu propio usuario');
+    }
+    const existing = await prisma.user.findUnique({ where: { id }, select: { id: true, email: true, name: true } });
+    if (!existing) throw new AppError(404, 'Usuario no encontrado');
+
+    const reassignTo = req.user!.userId;
+    await prisma.$transaction(async (tx) => {
+      await tx.movement.updateMany({ where: { userId: id }, data: { userId: reassignTo } });
+      await tx.maintenance.updateMany({ where: { userId: id }, data: { userId: reassignTo } });
+      await tx.loanRecord.updateMany({ where: { approvedBy: id }, data: { approvedBy: reassignTo } });
+      await tx.user.delete({ where: { id } });
+    });
+    await writeAudit(req, 'User', id, 'DELETE', {
+      email: existing.email,
+      name: existing.name,
+      reassignedTo: reassignTo,
+    });
     res.status(204).send();
   } catch (e) {
     next(e);

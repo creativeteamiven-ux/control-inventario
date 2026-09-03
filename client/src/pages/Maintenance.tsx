@@ -170,6 +170,7 @@ export default function Maintenance() {
   const items = data ?? [];
   const { canViewCost, hasPermission } = usePermissions();
   const canDelete = hasPermission('maintenance.delete');
+  const canCreate = hasPermission('maintenance.create');
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const handleDelete = async (m: MaintenanceItem) => {
@@ -196,46 +197,50 @@ export default function Maintenance() {
         <h1 className="font-display text-2xl font-bold text-foreground">Mantenimientos</h1>
         {/* Botones: en móvil en grid 2 columnas y full-width el principal */}
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-2">
-          <Button variant="outline" onClick={downloadTemplate} className="min-h-touch sm:min-h-0">
-            <Download className="h-4 w-4 mr-2 shrink-0" />
-            <span className="truncate">Plantilla</span>
-          </Button>
-          <div className="relative">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleImport}
-              disabled={importing}
-            />
-            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing} className="w-full min-h-touch sm:min-h-0">
-              <Upload className="h-4 w-4 mr-2 shrink-0" />
-              <span className="truncate">{importing ? 'Cargando...' : 'Cargar'}</span>
-            </Button>
-          </div>
-          <Button variant="outline" onClick={downloadReportTemplate} className="min-h-touch sm:min-h-0">
-            <Download className="h-4 w-4 mr-2 shrink-0" />
-            <span className="truncate">Reporte datos</span>
-          </Button>
-          <div className="relative">
-            <input
-              ref={fileDataInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleImportData}
-              disabled={importingData}
-            />
-            <Button variant="outline" onClick={() => fileDataInputRef.current?.click()} disabled={importingData} className="w-full min-h-touch sm:min-h-0">
-              <Upload className="h-4 w-4 mr-2 shrink-0" />
-              <span className="truncate">{importingData ? 'Cargando...' : 'Cargar datos'}</span>
-            </Button>
-          </div>
-          <Button onClick={() => setAddOpen(true)} className="col-span-2 min-h-touch sm:col-span-1 sm:min-h-0">
-            <Plus className="h-4 w-4 mr-2 shrink-0" />
-            Agregar mantenimiento
-          </Button>
+          {canCreate && (
+            <>
+              <Button variant="outline" onClick={downloadTemplate} className="min-h-touch sm:min-h-0">
+                <Download className="h-4 w-4 mr-2 shrink-0" />
+                <span className="truncate">Plantilla</span>
+              </Button>
+              <div className="relative">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={handleImport}
+                  disabled={importing}
+                />
+                <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing} className="w-full min-h-touch sm:min-h-0">
+                  <Upload className="h-4 w-4 mr-2 shrink-0" />
+                  <span className="truncate">{importing ? 'Cargando...' : 'Cargar'}</span>
+                </Button>
+              </div>
+              <Button variant="outline" onClick={downloadReportTemplate} className="min-h-touch sm:min-h-0">
+                <Download className="h-4 w-4 mr-2 shrink-0" />
+                <span className="truncate">Reporte datos</span>
+              </Button>
+              <div className="relative">
+                <input
+                  ref={fileDataInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={handleImportData}
+                  disabled={importingData}
+                />
+                <Button variant="outline" onClick={() => fileDataInputRef.current?.click()} disabled={importingData} className="w-full min-h-touch sm:min-h-0">
+                  <Upload className="h-4 w-4 mr-2 shrink-0" />
+                  <span className="truncate">{importingData ? 'Cargando...' : 'Cargar datos'}</span>
+                </Button>
+              </div>
+              <Button onClick={() => setAddOpen(true)} className="col-span-2 min-h-touch sm:col-span-1 sm:min-h-0">
+                <Plus className="h-4 w-4 mr-2 shrink-0" />
+                Agregar mantenimiento
+              </Button>
+            </>
+          )}
         </div>
       </div>
       {isLoading ? (
@@ -282,6 +287,7 @@ export default function Maintenance() {
                       </div>
                     )}
                   </dl>
+                  {canCreate && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -294,6 +300,7 @@ export default function Maintenance() {
                     <Pencil className="h-4 w-4 mr-2" />
                     Editar
                   </Button>
+                  )}
                   {canDelete && (
                     <Button
                       variant="ghost"
@@ -341,6 +348,7 @@ export default function Maintenance() {
                     {canViewCost() && <td className="py-3 px-4">{m.cost ? `$${m.cost}` : '—'}</td>}
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-1">
+                        {canCreate && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -353,6 +361,7 @@ export default function Maintenance() {
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
+                        )}
                         {canDelete && (
                           <Button
                             variant="ghost"

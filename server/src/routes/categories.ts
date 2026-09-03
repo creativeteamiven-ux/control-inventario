@@ -1,12 +1,11 @@
+import { prisma } from '../lib/prisma.js';
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { createCategorySchema, updateCategorySchema } from '@soundvault/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import { writeAudit } from '../lib/audit.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const ACTIVE_DEVICE_COUNT = {
   select: { devices: { where: { deletedAt: null } } },
@@ -14,7 +13,7 @@ const ACTIVE_DEVICE_COUNT = {
 
 router.use(authenticate);
 
-router.get('/', async (req, res, next) => {
+router.get('/', requirePermission('categories.view'), async (req, res, next) => {
   try {
     const categories = await prisma.category.findMany({
       where: { parentId: null },
@@ -35,7 +34,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.get('/tree', async (req, res, next) => {
+router.get('/tree', requirePermission('categories.view'), async (req, res, next) => {
   try {
     const categories = await prisma.category.findMany({
       include: { _count: ACTIVE_DEVICE_COUNT },
@@ -47,7 +46,7 @@ router.get('/tree', async (req, res, next) => {
   }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', requirePermission('categories.view'), async (req, res, next) => {
   try {
     const cat = await prisma.category.findUnique({
       where: { id: req.params.id },

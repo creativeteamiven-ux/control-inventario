@@ -84,8 +84,22 @@ function AppRoutes() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
-        <Route path="inventory" element={<Inventory />} />
-        <Route path="inventory/:id" element={<DeviceDetail />} />
+        <Route
+          path="inventory"
+          element={
+            <PermissionRoute permission="inventory.view">
+              <Inventory />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="inventory/:id"
+          element={
+            <PermissionRoute permission="inventory.view">
+              <DeviceDetail />
+            </PermissionRoute>
+          }
+        />
         <Route
           path="trash"
           element={
@@ -96,10 +110,38 @@ function AppRoutes() {
         />
         <Route path="scan" element={<Scanner />} />
         <Route path="device/:id" element={<DeviceRedirect />} />
-        <Route path="categories" element={<Categories />} />
-        <Route path="maintenance" element={<Maintenance />} />
-        <Route path="loans" element={<Loans />} />
-        <Route path="movements" element={<Movements />} />
+        <Route
+          path="categories"
+          element={
+            <PermissionRoute permission="categories.view">
+              <Categories />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="maintenance"
+          element={
+            <PermissionRoute permission="maintenance.view">
+              <Maintenance />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="loans"
+          element={
+            <PermissionRoute permission="loans.view">
+              <Loans />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="movements"
+          element={
+            <PermissionRoute permission="movements.view">
+              <Movements />
+            </PermissionRoute>
+          }
+        />
         <Route
           path="events"
           element={
@@ -117,7 +159,14 @@ function AppRoutes() {
           }
         />
         <Route path="locations" element={<Locations />} />
-        <Route path="reports" element={<Reports />} />
+        <Route
+          path="reports"
+          element={
+            <PermissionRoute permission="reports.view">
+              <Reports />
+            </PermissionRoute>
+          }
+        />
         <Route
           path="expenses"
           element={
@@ -137,9 +186,9 @@ function AppRoutes() {
         <Route
           path="users"
           element={
-            <AdminRoute>
+            <PermissionRoute permission="users.view">
               <Users />
-            </AdminRoute>
+            </PermissionRoute>
           }
         />
         <Route

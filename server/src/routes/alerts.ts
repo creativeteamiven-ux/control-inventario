@@ -1,5 +1,5 @@
+import { prisma } from '../lib/prisma.js';
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest, requireRole } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { computeAlerts } from '../lib/alerts.js';
@@ -9,7 +9,6 @@ import { getDbAlertRecipients, getEffectiveAlertEmails, isValidEmail } from '../
 import { writeAudit } from '../lib/audit.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 /**
  * Endpoint para CRON EXTERNO (Vercel Cron, cron-job.org, GitHub Actions, etc.).

@@ -28,7 +28,6 @@ import { getBuildEventId, setBuildEventId } from '@/lib/eventBuild';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { deviceStatusLabel } from '@/lib/statusLabels';
-import { useAuth } from '@/hooks/useAuth';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useLocations } from '@/hooks/useLocations';
 import BarcodeScanner from '@/components/BarcodeScanner';
@@ -115,10 +114,9 @@ export default function Scanner() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const { user } = useAuth();
   const { hasPermission } = usePermissions();
   const { label: locationLabel } = useLocations();
-  const canEdit = (user?.role === 'ADMIN' || user?.role === 'MANAGER') && hasPermission('inventory.edit');
+  const canEdit = hasPermission('inventory.edit');
   const canEvent = hasPermission('events.manage') || hasPermission('events.scan');
 
   const initialMode: ScanMode = searchParams.get('mode') === 'event' && canEvent ? 'event' : 'lookup';

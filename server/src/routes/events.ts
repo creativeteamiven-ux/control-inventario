@@ -1,12 +1,13 @@
 import { Router } from 'express';
-import { PrismaClient, EventPhase, EventStatus, MovementType } from '@prisma/client';
+import { EventPhase, EventStatus, MovementType } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { assertLocationCode, locationDisplayName, resolveEventDestination, isTemporaryLocation } from '../lib/locations.js';
 import { writeAudit } from '../lib/audit.js';
 
+import { prisma } from '../lib/prisma.js';
+
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(authenticate);
 

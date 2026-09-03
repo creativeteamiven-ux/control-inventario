@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import PDFDocument from 'pdfkit';
 import * as XLSX from 'xlsx';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
@@ -7,8 +6,9 @@ import { stripCostFromResponse } from '../lib/permissions.js';
 import { computeDepreciation } from '../lib/depreciation.js';
 import { locationNameMap } from '../lib/locations.js';
 
+import { prisma } from '../lib/prisma.js';
+
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(authenticate);
 

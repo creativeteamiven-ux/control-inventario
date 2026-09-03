@@ -10,8 +10,8 @@ import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import { prisma } from './lib/prisma.js';
 
-import { PrismaClient } from '@prisma/client';
 import authRouter from './routes/auth.js';
 import devicesRouter from './routes/devices.js';
 import categoriesRouter from './routes/categories.js';
@@ -33,6 +33,7 @@ import eventsRouter from './routes/events.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { startAlertScheduler } from './lib/scheduler.js';
 import { ensureEventTables } from './lib/ensureEventTables.js';
+import { ensureSchemaCompat } from './lib/ensureSchemaCompat.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // En Vercel (Root Directory = server) no hay carpeta padre; cargar .env desde el mismo directorio que index.js
@@ -131,7 +132,6 @@ app.use(
 app.use(express.json());
 
 // Diagnóstico: comprobar que la API y la DB responden
-const prisma = new PrismaClient();
 app.get('/api/health', async (_req, res) => {
   const origin = _req.headers.origin;
   if (origin && isAllowedOrigin(origin)) {
@@ -207,23 +207,29 @@ app.use((req, res) => {
 
 app.use(errorHandler);
 
+async function bootDb() {
+  try {
+    console.log('[DB] Verificando schema y tablas de eventos...');
+    await ensureSchemaCompat(prisma);
+    await ensureEventTables(prisma);
+    console.log('[DB] Schema y tablas de eventos OK');
+  } catch (err) {
+    console.error('[DB] Error en boot DB:', (err as Error).message);
+  }
+}
+
 // En Vercel la app se exporta y la ejecuta el runtime serverless; localmente arrancamos el servidor
 export default app;
 
-if (!process.env.VERCEL) {
+if (process.env.VERCEL) {
+  void bootDb();
+} else {
   const host = process.env.RENDER ? '0.0.0.0' : 'localhost';
-  const boot = async () => {
-    try {
-      console.log('[DB] Verificando tablas de eventos...');
-      await ensureEventTables(prisma);
-      console.log('[DB] Tablas de eventos OK');
-    } catch (err) {
-      console.error('[DB] Error creando tablas de eventos:', (err as Error).message);
-    }
+  void (async () => {
+    await bootDb();
     app.listen(PORT, host, () => {
       console.log(`🚀 The Warehouse API running on http://${host}:${PORT}`);
-      startAlertScheduler(new PrismaClient());
+      startAlertScheduler(prisma);
     });
-  };
-  void boot();
+  })();
 }

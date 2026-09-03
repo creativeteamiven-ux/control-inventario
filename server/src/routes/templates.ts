@@ -3,15 +3,15 @@
  */
 import { Router } from 'express';
 import * as XLSX from 'xlsx';
-import { PrismaClient } from '@prisma/client';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, requirePermission } from '../middleware/auth.js';
+
+import { prisma } from '../lib/prisma.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 router.use(authenticate);
 
 // Plantilla para agregar equipos
-router.get('/equipment', (_req, res, next) => {
+router.get('/equipment', requirePermission('inventory.export'), (_req, res, next) => {
   try {
     const headers = [
       'Nombre', 'Marca', 'Modelo', 'Serie', 'Categoria_Slug', 'Estado', 'Ubicacion', 'Precio', 'Proveedor', 'Notas', 'Observacion', 'Condicion',
@@ -43,7 +43,7 @@ router.get('/equipment', (_req, res, next) => {
 
 // Plantilla para traslados/movimientos
 // Query: ?deviceIds=id1,id2,... — prellena filas con esos equipos (del carrito)
-router.get('/transfers', async (req, res, next) => {
+router.get('/transfers', requirePermission('movements.create'), async (req, res, next) => {
   try {
     const headers = ['Codigo_Equipo', 'Nombre', 'Desde_Ubicacion', 'Tipo', 'Hasta_Ubicacion', 'Razon', 'Responsable', 'Fecha'];
     let rows: (string | number)[][] = [];
@@ -99,7 +99,7 @@ router.get('/transfers', async (req, res, next) => {
 
 // Plantilla para enviar equipos a mantenimiento (cambiar estado y crear registro)
 // Query: ?deviceIds=id1,id2,... — opcional, prellena filas con esos equipos
-router.get('/maintenance', async (req, res, next) => {
+router.get('/maintenance', requirePermission('maintenance.create'), async (req, res, next) => {
   try {
     const headers = ['Codigo_Equipo', 'Nombre', 'Descripcion', 'Tipo', 'Fecha_inicio'];
     let rows: (string | number)[][] = [];
@@ -153,7 +153,7 @@ router.get('/maintenance', async (req, res, next) => {
 
 // Reporte/plantilla con equipos en mantenimiento para completar datos y cargar de forma masiva
 // Incluye registros con estado SCHEDULED o IN_PROGRESS (sin completar)
-router.get('/maintenance-report', async (_req, res, next) => {
+router.get('/maintenance-report', requirePermission('maintenance.view'), async (_req, res, next) => {
   try {
     const records = await prisma.maintenance.findMany({
       where: { status: { in: ['SCHEDULED', 'IN_PROGRESS'] } },

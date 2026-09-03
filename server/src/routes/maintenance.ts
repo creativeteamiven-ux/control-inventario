@@ -1,17 +1,16 @@
+import { prisma } from '../lib/prisma.js';
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { createMaintenanceSchema, updateMaintenanceSchema } from '@soundvault/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
-import { stripCostFromResponse } from '../lib/permissions.js';
+import { canViewCost, stripCostFromResponse } from '../lib/permissions.js';
 import { writeAudit } from '../lib/audit.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(authenticate);
 
-router.get('/', async (req, res, next) => {
+router.get('/', requirePermission('maintenance.view'), async (req, res, next) => {
   try {
     const status = req.query.status as string | undefined;
     const deviceId = req.query.deviceId as string | undefined;
@@ -33,24 +32,32 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.get('/stats', async (req, res, next) => {
+router.get('/stats', requirePermission('maintenance.view'), async (req, res, next) => {
   try {
+    const perms = (req as AuthRequest).user?.permissions ?? [];
     const [scheduled, inProgress, completed, totalCost] = await Promise.all([
       prisma.maintenance.count({ where: { status: 'SCHEDULED' } }),
       prisma.maintenance.count({ where: { status: 'IN_PROGRESS' } }),
       prisma.maintenance.count({ where: { status: 'COMPLETED' } }),
-      prisma.maintenance.aggregate({
-        where: { status: 'COMPLETED' },
-        _sum: { cost: true },
-      }),
+      canViewCost(perms)
+        ? prisma.maintenance.aggregate({
+            where: { status: 'COMPLETED' },
+            _sum: { cost: true },
+          })
+        : Promise.resolve({ _sum: { cost: null } }),
     ]);
-    res.json({ scheduled, inProgress, completed, totalCost: Number(totalCost._sum.cost || 0) });
+    res.json({
+      scheduled,
+      inProgress,
+      completed,
+      ...(canViewCost(perms) ? { totalCost: Number(totalCost._sum.cost || 0) } : {}),
+    });
   } catch (e) {
     next(e);
   }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', requirePermission('maintenance.view'), async (req, res, next) => {
   try {
     const item = await prisma.maintenance.findUnique({
       where: { id: req.params.id },
@@ -60,7 +67,8 @@ router.get('/:id', async (req, res, next) => {
       },
     });
     if (!item) throw new AppError(404, 'Mantenimiento no encontrado');
-    res.json(item);
+    const perms = (req as AuthRequest).user?.permissions ?? [];
+    res.json(stripCostFromResponse(item, perms));
   } catch (e) {
     next(e);
   }

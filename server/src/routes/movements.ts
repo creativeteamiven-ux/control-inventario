@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { createMovementSchema } from '@soundvault/shared';
 import type { MovementType } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler.js';
@@ -7,8 +6,9 @@ import { authenticate, AuthRequest, requirePermission } from '../middleware/auth
 import { writeAudit } from '../lib/audit.js';
 import { assertLocationCode } from '../lib/locations.js';
 
+import { prisma } from '../lib/prisma.js';
+
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(authenticate);
 
@@ -75,7 +75,7 @@ router.post('/', requirePermission('movements.create'), async (req: AuthRequest,
   }
 });
 
-router.get('/', async (req, res, next) => {
+router.get('/', requirePermission('movements.view'), async (req, res, next) => {
   try {
     const type = req.query.type as string | undefined;
     const userId = req.query.userId as string | undefined;

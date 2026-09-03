@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import UserModal from '@/components/UserModal';
 import { cn } from '@/lib/utils';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: 'Administrador',
@@ -26,6 +27,10 @@ interface UserRow {
 
 export default function Users() {
   const queryClient = useQueryClient();
+  const { hasPermission } = usePermissions();
+  const canCreate = hasPermission('users.create');
+  const canEdit = hasPermission('users.edit');
+  const canDelete = hasPermission('users.delete');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
 
@@ -55,10 +60,12 @@ export default function Users() {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="font-display text-2xl font-bold text-foreground">Usuarios</h1>
-        <Button onClick={() => { setEditingUser(null); setModalOpen(true); }}>
-          <Plus className="h-4 w-4 mr-2" />
-          Crear usuario
-        </Button>
+        {canCreate && (
+          <Button onClick={() => { setEditingUser(null); setModalOpen(true); }}>
+            <Plus className="h-4 w-4 mr-2" />
+            Crear usuario
+          </Button>
+        )}
       </div>
       {isLoading ? (
         <div className="bg-card rounded-xl border border-border p-12 text-center text-muted">
@@ -95,6 +102,7 @@ export default function Users() {
                   </p>
                 )}
                 <div className="flex gap-2 pt-1">
+                  {canEdit && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -104,6 +112,8 @@ export default function Users() {
                     <Pencil className="h-4 w-4 mr-2" />
                     Editar
                   </Button>
+                  )}
+                  {canDelete && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -112,6 +122,7 @@ export default function Users() {
                   >
                     <Trash2 className="h-4 w-4 md:mr-0" />
                   </Button>
+                  )}
                 </div>
               </div>
             ))}
@@ -119,7 +130,7 @@ export default function Users() {
               <div className="bg-card rounded-xl border border-border p-8 text-center text-muted flex flex-col items-center gap-3">
                 <UsersIcon className="h-12 w-12" />
                 <p>No hay usuarios</p>
-                <Button className="min-h-touch w-full max-w-xs" onClick={() => setModalOpen(true)}>
+                <Button className="min-h-touch w-full max-w-xs" onClick={() => setModalOpen(true)} disabled={!canCreate}>
                   Crear primer usuario
                 </Button>
               </div>
@@ -166,6 +177,7 @@ export default function Users() {
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-1">
+                        {canEdit && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -175,6 +187,8 @@ export default function Users() {
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
+                        )}
+                        {canDelete && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -184,6 +198,7 @@ export default function Users() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -194,7 +209,7 @@ export default function Users() {
               <div className="p-12 text-center text-muted flex flex-col items-center gap-2">
                 <UsersIcon className="h-12 w-12" />
                 <p>No hay usuarios</p>
-                <Button variant="outline" size="sm" onClick={() => setModalOpen(true)}>
+                <Button variant="outline" size="sm" onClick={() => setModalOpen(true)} disabled={!canCreate}>
                   Crear primer usuario
                 </Button>
               </div>

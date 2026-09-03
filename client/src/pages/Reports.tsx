@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import { useLocations } from '@/hooks/useLocations';
+import { usePermissions } from '@/hooks/usePermissions';
 import toast from 'react-hot-toast';
 
 const MOVEMENT_TYPE_OPTIONS = [
@@ -53,6 +54,8 @@ function flattenCategories(
 
 export default function Reports() {
   const { locations } = useLocations();
+  const { hasPermission } = usePermissions();
+  const canExport = hasPermission('reports.export');
   const [downloading, setDownloading] = useState(false);
   const [invExcelBusy, setInvExcelBusy] = useState(false);
   const [movBusy, setMovBusy] = useState<'excel' | 'pdf' | null>(null);
@@ -66,16 +69,13 @@ export default function Reports() {
   const { data: usersData } = useQuery({
     queryKey: ['users-for-reports'],
     queryFn: async () => {
-      const { data } = await api.get('/api/users');
+      const { data } = await api.get<{ id: string; name: string }[]>('/api/users/names');
       return data;
     },
     retry: false,
+    enabled: canExport,
   });
-  const users: { id: string; name: string }[] = Array.isArray(usersData)
-    ? usersData
-    : Array.isArray(usersData?.users)
-      ? usersData.users
-      : [];
+  const users: { id: string; name: string }[] = Array.isArray(usersData) ? usersData : [];
 
   const { data: categoriesData } = useQuery({
     queryKey: ['categories'],
@@ -235,14 +235,21 @@ export default function Reports() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 mt-4">
-          <Button onClick={() => downloadMovements('excel')} disabled={movBusy !== null}>
-            <FileSpreadsheet className="h-4 w-4 mr-2" />
-            {movBusy === 'excel' ? 'Generando...' : 'Descargar Excel'}
-          </Button>
-          <Button variant="outline" onClick={() => downloadMovements('pdf')} disabled={movBusy !== null}>
-            <FileText className="h-4 w-4 mr-2" />
-            {movBusy === 'pdf' ? 'Generando...' : 'Descargar PDF'}
-          </Button>
+          {canExport && (
+            <>
+              <Button onClick={() => downloadMovements('excel')} disabled={movBusy !== null}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                {movBusy === 'excel' ? 'Generando...' : 'Descargar Excel'}
+              </Button>
+              <Button variant="outline" onClick={() => downloadMovements('pdf')} disabled={movBusy !== null}>
+                <FileText className="h-4 w-4 mr-2" />
+                {movBusy === 'pdf' ? 'Generando...' : 'Descargar PDF'}
+              </Button>
+            </>
+          )}
+          {!canExport && (
+            <p className="text-sm text-muted">No tienes permiso para exportar reportes.</p>
+          )}
           {(movFilters.from || movFilters.to || movFilters.type || movFilters.userId) && (
             <button
               onClick={() => setMovFilters({ from: '', to: '', type: '', userId: '' })}
@@ -323,14 +330,20 @@ export default function Reports() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 mt-4">
-          <Button onClick={downloadInventoryPdf} disabled={downloading || invExcelBusy}>
-            <FileText className="h-4 w-4 mr-2" />
-            {downloading ? 'Generando...' : 'Descargar PDF'}
-          </Button>
-          <Button variant="outline" onClick={downloadInventoryExcel} disabled={invExcelBusy || downloading}>
-            <FileSpreadsheet className="h-4 w-4 mr-2" />
-            {invExcelBusy ? 'Generando...' : 'Descargar Excel'}
-          </Button>
+          {canExport ? (
+            <>
+              <Button onClick={downloadInventoryPdf} disabled={downloading || invExcelBusy}>
+                <FileText className="h-4 w-4 mr-2" />
+                {downloading ? 'Generando...' : 'Descargar PDF'}
+              </Button>
+              <Button variant="outline" onClick={downloadInventoryExcel} disabled={invExcelBusy || downloading}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                {invExcelBusy ? 'Generando...' : 'Descargar Excel'}
+              </Button>
+            </>
+          ) : (
+            <p className="text-sm text-muted">No tienes permiso para exportar.</p>
+          )}
           {(invFilters.categoryId || invFilters.location || invFilters.eventId) && (
             <button
               onClick={() => setInvFilters({ categoryId: '', location: '', eventId: '' })}
@@ -368,7 +381,7 @@ export default function Reports() {
               onChange={(e) => setMaintFilters((f) => ({ ...f, to: e.target.value }))}
             />
           </div>
-          <Button variant="outline" onClick={downloadMaintenance} disabled={maintBusy}>
+          <Button variant="outline" onClick={downloadMaintenance} disabled={maintBusy || !canExport}>
             <FileSpreadsheet className="h-4 w-4 mr-2" />
             {maintBusy ? 'Generando...' : 'Descargar Excel'}
           </Button>
@@ -394,7 +407,7 @@ export default function Reports() {
               onChange={(e) => setLoanFilters((f) => ({ ...f, to: e.target.value }))}
             />
           </div>
-          <Button variant="outline" onClick={downloadLoans} disabled={loanBusy}>
+          <Button variant="outline" onClick={downloadLoans} disabled={loanBusy || !canExport}>
             <FileSpreadsheet className="h-4 w-4 mr-2" />
             {loanBusy ? 'Generando...' : 'Descargar Excel'}
           </Button>

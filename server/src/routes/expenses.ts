@@ -1,11 +1,11 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import type { ExpenseCategory } from '@prisma/client';
 import * as XLSX from 'xlsx';
 import { createExpenseSchema, updateExpenseSchema } from '@soundvault/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
+import { prisma } from '../lib/prisma.js';
 
 const CATEGORY_LABELS: Record<string, string> = {
   PURCHASE: 'Compra de equipo',
@@ -18,7 +18,6 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 const router = Router();
-const prisma = new PrismaClient();
 
 router.use(authenticate);
 

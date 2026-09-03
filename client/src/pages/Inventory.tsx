@@ -28,7 +28,12 @@ export default function Inventory() {
   const { locations, label: locationLabel } = useLocations();
   const { hasPermission } = usePermissions();
   const canDelete = hasPermission('inventory.delete');
+  const canCreate = hasPermission('inventory.create');
+  const canEdit = hasPermission('inventory.edit');
+  const canExport = hasPermission('inventory.export');
   const canManageEvents = hasPermission('events.manage');
+  const canMove = hasPermission('movements.create');
+  const canMaintCreate = hasPermission('maintenance.create');
   const [view, setView] = useState<'table' | 'grid'>('table');
   const [inTransferCart, setInTransferCart] = useState<Set<string>>(
     () => new Set(getStoredCart().map((x) => x.id))
@@ -659,28 +664,34 @@ export default function Inventory() {
               <Grid3X3 className="h-4 w-4" />
             </button>
           </div>
-          <Button variant="outline" onClick={downloadTemplate}>
-            <Download className="h-4 w-4 mr-2" />
-            Plantilla
-          </Button>
-          <Button variant="outline" onClick={() => downloadLabels(false)} title="Genera una hoja PDF con etiquetas de código de barras de todos los equipos">
-            <Barcode className="h-4 w-4 mr-2" />
-            Etiquetas de barras
-          </Button>
-          <div className="relative">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleImport}
-              disabled={importing}
-            />
-            <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}>
-              <Upload className="h-4 w-4 mr-2" />
-              {importing ? 'Importando...' : 'Importar'}
+          {canExport && (
+            <Button variant="outline" onClick={downloadTemplate}>
+              <Download className="h-4 w-4 mr-2" />
+              Plantilla
             </Button>
-          </div>
+          )}
+          {canExport && (
+            <Button variant="outline" onClick={() => downloadLabels(false)} title="Genera una hoja PDF con etiquetas de código de barras de todos los equipos">
+              <Barcode className="h-4 w-4 mr-2" />
+              Etiquetas de barras
+            </Button>
+          )}
+          {canExport && (
+            <div className="relative">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleImport}
+                disabled={importing}
+              />
+              <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+                <Upload className="h-4 w-4 mr-2" />
+                {importing ? 'Importando...' : 'Importar'}
+              </Button>
+            </div>
+          )}
           {canDelete && (
             <Link to="/trash">
               <Button variant="outline">
@@ -689,10 +700,12 @@ export default function Inventory() {
               </Button>
             </Link>
           )}
-          <Button onClick={() => setAddModalOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Agregar equipo
-          </Button>
+          {canCreate && (
+            <Button onClick={() => setAddModalOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Agregar equipo
+            </Button>
+          )}
         </div>
       </div>
 
@@ -705,21 +718,29 @@ export default function Inventory() {
               Agregar a evento
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={bulkAddToTransfer}>
-            <Truck className="h-4 w-4 mr-2" />
-            Agregar al traslado
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setBulkStatusOpen(true)}>
-            Cambiar estado
-          </Button>
-          <Button variant="outline" size="sm" onClick={downloadMaintenanceTemplate}>
-            <Download className="h-4 w-4 mr-2" />
-            Plantilla mantenimiento
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => downloadLabels(true)}>
-            <Barcode className="h-4 w-4 mr-2" />
-            Etiquetas de barras
-          </Button>
+          {canMove && (
+            <Button variant="outline" size="sm" onClick={bulkAddToTransfer}>
+              <Truck className="h-4 w-4 mr-2" />
+              Agregar al traslado
+            </Button>
+          )}
+          {canEdit && (
+            <Button variant="outline" size="sm" onClick={() => setBulkStatusOpen(true)}>
+              Cambiar estado
+            </Button>
+          )}
+          {canMaintCreate && (
+            <Button variant="outline" size="sm" onClick={downloadMaintenanceTemplate}>
+              <Download className="h-4 w-4 mr-2" />
+              Plantilla mantenimiento
+            </Button>
+          )}
+          {canExport && (
+            <Button variant="outline" size="sm" onClick={() => downloadLabels(true)}>
+              <Barcode className="h-4 w-4 mr-2" />
+              Etiquetas de barras
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={clearSelection}>
             Limpiar selección
           </Button>

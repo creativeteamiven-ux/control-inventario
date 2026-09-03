@@ -2,10 +2,9 @@
  * Registro de auditoría: guarda quién hizo qué y cuándo en la entidad AuditLog.
  * Nunca debe romper la operación principal: si falla, solo se loguea.
  */
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './prisma.js';
 import type { AuthRequest } from '../middleware/auth.js';
 
-const prisma = new PrismaClient();
 
 export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'RETURN' | 'STATUS_CHANGE';
 
