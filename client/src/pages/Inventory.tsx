@@ -2,8 +2,9 @@ import { useState, useRef } from 'react';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Package, Grid3X3, List, Plus, Search, Download, Upload, Truck, FolderTree, AlertCircle, CheckCircle, XCircle, MapPin, SlidersHorizontal, Barcode, Trash2 } from 'lucide-react';
+import { Package, Grid3X3, List, Plus, Search, Download, Upload, Truck, FolderTree, AlertCircle, CheckCircle, XCircle, MapPin, SlidersHorizontal, Barcode, Trash2, CalendarDays } from 'lucide-react';
 import { addToStoredCart, addManyToStoredCart, getStoredCart } from '@/lib/transferCart';
+import { getBuildEventId, setBuildEventId } from '@/lib/eventBuild';
 import { api } from '@/lib/api';
 import AddDeviceModal from '@/components/AddDeviceModal';
 import toast from 'react-hot-toast';
@@ -27,6 +28,7 @@ export default function Inventory() {
   const { locations, label: locationLabel } = useLocations();
   const { hasPermission } = usePermissions();
   const canDelete = hasPermission('inventory.delete');
+  const canManageEvents = hasPermission('events.manage');
   const [view, setView] = useState<'table' | 'grid'>('table');
   const [inTransferCart, setInTransferCart] = useState<Set<string>>(
     () => new Set(getStoredCart().map((x) => x.id))
@@ -56,6 +58,9 @@ export default function Inventory() {
   const [bulkStatusOpen, setBulkStatusOpen] = useState(false);
   const [bulkStatusValue, setBulkStatusValue] = useState<string>('ACTIVE');
   const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [addToEventOpen, setAddToEventOpen] = useState(false);
+  const [selectedEventId, setSelectedEventId] = useState<string>(() => getBuildEventId() || '');
+  const [addingToEvent, setAddingToEvent] = useState(false);
   const [limit, setLimit] = useState(25);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
@@ -66,6 +71,17 @@ export default function Inventory() {
       const { data } = await api.get('/api/categories');
       return data;
     },
+  });
+
+  const { data: draftEvents = [] } = useQuery({
+    queryKey: ['events', 'DRAFT'],
+    queryFn: async () => {
+      const { data } = await api.get<{ id: string; name: string; stats: { total: number } }[]>('/api/events', {
+        params: { status: 'DRAFT' },
+      });
+      return data;
+    },
+    enabled: canManageEvents && addToEventOpen,
   });
 
   function flattenCategories(
@@ -263,6 +279,49 @@ export default function Inventory() {
     setInTransferCart((prev) => new Set([...prev, ...toAdd.map((d) => d.id)]));
     clearSelection();
     toast.success(added ? `${added} equipo(s) agregado(s) al traslado` : 'Ya estaban en el traslado');
+  };
+
+  const openAddToEvent = () => {
+    const saved = getBuildEventId();
+    if (saved) setSelectedEventId(saved);
+    setAddToEventOpen(true);
+  };
+
+  const bulkAddToEvent = async () => {
+    const eventId =
+      selectedEventId && draftEvents.some((e) => e.id === selectedEventId)
+        ? selectedEventId
+        : draftEvents[0]?.id;
+    if (!eventId || selectedIds.size === 0) {
+      toast.error('Selecciona un evento en borrador');
+      return;
+    }
+    setAddingToEvent(true);
+    try {
+      const { data } = await api.post<{ stats?: { total: number }; name?: string }>(
+        `/api/events/${eventId}/items`,
+        { deviceIds: Array.from(selectedIds) }
+      );
+      setBuildEventId(eventId);
+      setSelectedEventId(eventId);
+      await queryClient.invalidateQueries({ queryKey: ['events'] });
+      await queryClient.invalidateQueries({ queryKey: ['event', eventId] });
+      const total = data?.stats?.total;
+      toast.success(
+        total != null
+          ? `${selectedIds.size} equipo(s) agregados. Lista: ${total} en total`
+          : `${selectedIds.size} equipo(s) agregados al evento`
+      );
+      setAddToEventOpen(false);
+      clearSelection();
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        'No se pudo agregar al evento';
+      toast.error(msg);
+    } finally {
+      setAddingToEvent(false);
+    }
   };
 
   const downloadMaintenanceTemplate = async () => {
@@ -551,6 +610,12 @@ export default function Inventory() {
       {selectedIds.size > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3">
           <span className="font-medium text-foreground">{selectedIds.size} seleccionado(s)</span>
+          {canManageEvents && (
+            <Button variant="outline" size="sm" onClick={openAddToEvent}>
+              <CalendarDays className="h-4 w-4 mr-2" />
+              Agregar a evento
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={bulkAddToTransfer}>
             <Truck className="h-4 w-4 mr-2" />
             Agregar al traslado
@@ -569,6 +634,61 @@ export default function Inventory() {
           <Button variant="ghost" size="sm" onClick={clearSelection}>
             Limpiar selección
           </Button>
+        </div>
+      )}
+
+      {addToEventOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => !addingToEvent && setAddToEventOpen(false)}
+        >
+          <div
+            className="bg-card rounded-xl border border-border p-6 shadow-xl w-full max-w-sm space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h3 className="font-semibold text-lg">Agregar a evento</h3>
+              <p className="text-sm text-muted mt-1">
+                {selectedIds.size} equipo(s) se agregarán a la lista del evento en borrador.
+              </p>
+            </div>
+            {draftEvents.length === 0 ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted">No hay eventos en borrador.</p>
+                <Button asChild variant="outline" className="w-full">
+                  <Link to="/events" onClick={() => setAddToEventOpen(false)}>
+                    Ir a Eventos para crear uno
+                  </Link>
+                </Button>
+              </div>
+            ) : (
+              <div>
+                <label className="text-sm text-muted block mb-1.5">Evento</label>
+                <select
+                  value={selectedEventId && draftEvents.some((e) => e.id === selectedEventId) ? selectedEventId : draftEvents[0]?.id || ''}
+                  onChange={(e) => setSelectedEventId(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  {draftEvents.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name} ({e.stats.total} equipos)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setAddToEventOpen(false)} disabled={addingToEvent}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={bulkAddToEvent}
+                disabled={addingToEvent || draftEvents.length === 0}
+              >
+                {addingToEvent ? 'Agregando...' : 'Agregar'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 

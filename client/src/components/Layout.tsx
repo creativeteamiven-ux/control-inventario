@@ -20,7 +20,7 @@ export default function Layout() {
           onMenuClick={() => setSidebarOpen(true)}
           onOpenSearch={() => setSearchOpen(true)}
         />
-        <main className="flex-1 p-4 md:p-6 overflow-y-auto overflow-x-hidden pb-20 md:pb-6">
+        <main className="flex-1 p-4 md:p-6 overflow-y-auto overflow-x-hidden pb-20 md:pb-6 thin-scrollbar">
           <Outlet />
         </main>
       </div>
