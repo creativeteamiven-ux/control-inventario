@@ -152,7 +152,20 @@ export default function EventDetailPage() {
   );
 
   const handleActivate = async () => {
-    if (!id) return;
+    if (!id || !event) return;
+    const originLabel = event.fromLocationLabel ?? locationLabel(event.fromLocation);
+    const wrongLoc = event.items.filter((i) => i.device.location !== event.fromLocation);
+    if (wrongLoc.length > 0) {
+      const names = wrongLoc
+        .slice(0, 5)
+        .map((i) => `${i.device.internalCode} (${locationLabel(i.device.location)})`)
+        .join(', ');
+      const ok = confirm(
+        `${wrongLoc.length} equipo(s) NO están en el origen "${originLabel}" según inventario:\n${names}${wrongLoc.length > 5 ? '…' : ''}\n\n` +
+          `Al escanear la salida fallarán hasta que registres un traslado al origen, o cambies el origen del evento.\n\n¿Activar de todos modos?`
+      );
+      if (!ok) return;
+    }
     setActivating(true);
     try {
       await api.post(`/api/events/${id}/activate`);
@@ -216,6 +229,10 @@ export default function EventDetailPage() {
 
   const fromLabel = event.fromLocationLabel ?? locationLabel(event.fromLocation);
   const toLabel = event.toLocationLabel ?? locationLabel(event.toLocation);
+  const wrongOriginCount =
+    isActive && phase === 'OUTBOUND'
+      ? event.items.filter((i) => !i.outboundScannedAt && i.device.location !== event.fromLocation).length
+      : 0;
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 max-w-4xl mx-auto">
@@ -330,8 +347,16 @@ export default function EventDetailPage() {
             </div>
             <BarcodeScanner readerId={`event-scanner-${id}`} active={scanning} onScan={handleScan} />
             <p className="text-xs text-muted mt-2 text-center">
-              Varios usuarios pueden escanear a la vez — la lista se actualiza automáticamente.
+              {phase === 'OUTBOUND'
+                ? `Salida: el equipo debe figurar en inventario en "${fromLabel}" (origen del evento).`
+                : `Regreso: el equipo debe figurar en inventario en "${toLabel}" (destino del evento).`}
             </p>
+            {wrongOriginCount > 0 && phase === 'OUTBOUND' && (
+              <p className="text-xs text-amber-400 mt-2 text-center flex items-center justify-center gap-1">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                {wrongOriginCount} pendiente(s) con ubicación distinta al origen — revisa la lista abajo
+              </p>
+            )}
           </div>
           <div className="space-y-3">
             <h2 className="font-semibold">Último escaneo</h2>
@@ -396,17 +421,25 @@ export default function EventDetailPage() {
           {filteredItems.map((item) => {
             const done = phase === 'OUTBOUND' ? item.outboundScannedAt : item.inboundScannedAt;
             const doneUser = phase === 'OUTBOUND' ? item.outboundUserName : item.inboundUserName;
+            const expectedLoc = phase === 'OUTBOUND' ? event.fromLocation : event.toLocation;
+            const locMismatch = isActive && !done && item.device.location !== expectedLoc;
             return (
               <li
                 key={item.id}
                 className={cn(
                   'flex items-center gap-3 p-3 rounded-xl border',
-                  done ? 'border-green-500/30 bg-green-500/5' : 'border-border bg-card'
+                  done
+                    ? 'border-green-500/30 bg-green-500/5'
+                    : locMismatch
+                      ? 'border-amber-500/40 bg-amber-500/5'
+                      : 'border-border bg-card'
                 )}
               >
                 <div className="shrink-0">
                   {done ? (
                     <CheckCircle2 className="h-6 w-6 text-green-400" />
+                  ) : locMismatch ? (
+                    <AlertTriangle className="h-6 w-6 text-amber-400" />
                   ) : (
                     <Circle className="h-6 w-6 text-muted" />
                   )}
@@ -423,6 +456,11 @@ export default function EventDetailPage() {
                   <p className="text-xs text-muted font-mono">
                     {item.device.internalCode}
                     {item.device.serialNumber ? ` · ${item.device.serialNumber}` : ''}
+                  </p>
+                  <p className={cn('text-xs mt-0.5', locMismatch ? 'text-amber-400' : 'text-muted')}>
+                    Ubicación en inventario: {locationLabel(item.device.location)}
+                    {locMismatch &&
+                      ` · se espera ${phase === 'OUTBOUND' ? fromLabel : toLabel}`}
                   </p>
                   {done && doneUser && (
                     <p className="text-xs text-green-400/80 mt-0.5">Verificado por {doneUser}</p>

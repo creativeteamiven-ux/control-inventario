@@ -403,8 +403,14 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
         return res.status(400).json({
           success: false,
           code: 'WRONG_LOCATION',
-          message: `El equipo no está en el lugar de origen. Debe estar en "${fromLabel}" pero está en "${locationDisplayName(device.location, locNames)}"`,
-          device: { id: device.id, name: device.name, internalCode: device.internalCode, location: device.location },
+          message: `El equipo no está en el lugar de origen según inventario. Debe estar en "${fromLabel}" pero en el sistema figura en "${locationDisplayName(device.location, locNames)}". Registra un traslado a "${fromLabel}" o corrige la ubicación del equipo antes de verificar la salida.`,
+          device: {
+            id: device.id,
+            name: device.name,
+            internalCode: device.internalCode,
+            location: device.location,
+            locationLabel: locationDisplayName(device.location, locNames),
+          },
           expectedLocation: event.fromLocation,
           expectedLocationLabel: fromLabel,
         });
@@ -468,8 +474,14 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
       return res.status(400).json({
         success: false,
         code: 'WRONG_LOCATION',
-        message: `El equipo no está en el lugar del evento. Debe estar en "${toLabel}" pero está en "${locationDisplayName(device.location, locNames)}"`,
-        device: { id: device.id, name: device.name, internalCode: device.internalCode, location: device.location },
+        message: `El equipo no está en el lugar del evento según inventario. Debe estar en "${toLabel}" pero en el sistema figura en "${locationDisplayName(device.location, locNames)}". Tras confirmar la salida, los equipos pasan automáticamente a "${toLabel}". Si aún no confirmaste la salida, hazlo primero.`,
+        device: {
+          id: device.id,
+          name: device.name,
+          internalCode: device.internalCode,
+          location: device.location,
+          locationLabel: locationDisplayName(device.location, locNames),
+        },
         expectedLocation: event.toLocation,
         expectedLocationLabel: toLabel,
       });
