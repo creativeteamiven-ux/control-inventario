@@ -195,11 +195,42 @@ router.get('/movements/pdf', requirePermission('reports.export'), async (req, re
   }
 });
 
+const STATUS_LABELS: Record<string, string> = {
+  ACTIVE: 'Operativo',
+  MAINTENANCE: 'Mantenimiento',
+  LOANED: 'En préstamo',
+  DAMAGED: 'Dañado',
+  LOST: 'Extraviado',
+  RETIRED: 'Dado de baja',
+};
+
+const statusLabel = (v: string) => STATUS_LABELS[v] ?? v;
+
+/** Filtros de inventario: categoría, lugar y/o evento (equipos en la lista del evento). */
+async function buildInventoryWhere(query: Record<string, unknown>) {
+  const where: Record<string, unknown> = { deletedAt: null };
+  const categoryId = query.categoryId as string | undefined;
+  const location = query.location as string | undefined;
+  const eventId = query.eventId as string | undefined;
+  if (categoryId) where.categoryId = categoryId;
+  if (location) where.location = location;
+  if (eventId) {
+    where.eventItems = { some: { eventId } };
+  }
+  return where;
+}
+
+function inventoryFilterSubtitle(query: Record<string, unknown>, extras?: { categoryName?: string; locationName?: string; eventName?: string }) {
+  const parts: string[] = [];
+  if (query.categoryId) parts.push(`Categoría: ${extras?.categoryName || String(query.categoryId)}`);
+  if (query.location) parts.push(`Lugar: ${extras?.locationName || String(query.location)}`);
+  if (query.eventId) parts.push(`Evento: ${extras?.eventName || String(query.eventId)}`);
+  return parts.length ? parts.join(' · ') : 'Sin filtros (inventario completo)';
+}
+
 router.get('/inventory', requirePermission('reports.view'), async (req, res, next) => {
   try {
-    const categoryId = req.query.categoryId as string | undefined;
-    const where: Record<string, unknown> = { deletedAt: null };
-    if (categoryId) where.categoryId = categoryId;
+    const where = await buildInventoryWhere(req.query as Record<string, unknown>);
     const devices = await prisma.device.findMany({
       where,
       include: { category: true, images: { take: 1, orderBy: { order: 'asc' } } },
@@ -214,11 +245,26 @@ router.get('/inventory', requirePermission('reports.view'), async (req, res, nex
 
 router.get('/inventory/pdf', requirePermission('reports.export'), async (req, res, next) => {
   try {
+    const query = req.query as Record<string, unknown>;
+    const where = await buildInventoryWhere(query);
+    const names = await locationNameMap(prisma);
     const devices = await prisma.device.findMany({
-      where: { deletedAt: null },
+      where,
       include: { category: true },
       orderBy: [{ category: { name: 'asc' } }, { internalCode: 'asc' }],
     });
+
+    let categoryName: string | undefined;
+    let eventName: string | undefined;
+    if (query.categoryId) {
+      const cat = await prisma.category.findUnique({ where: { id: String(query.categoryId) }, select: { name: true } });
+      categoryName = cat?.name;
+    }
+    if (query.eventId) {
+      const ev = await prisma.event.findUnique({ where: { id: String(query.eventId) }, select: { name: true } });
+      eventName = ev?.name;
+    }
+    const locationName = query.location ? locLabel(String(query.location), names) : undefined;
 
     const doc = new PDFDocument({ size: 'A4', margin: 40 });
     const chunks: Buffer[] = [];
@@ -230,7 +276,10 @@ router.get('/inventory/pdf', requirePermission('reports.export'), async (req, re
 
     doc.fontSize(18).fillColor('#1E3A5F').text('The Warehouse - Reporte de Inventario', { align: 'center' });
     doc.moveDown(0.5);
-    doc.fontSize(10).fillColor('#666').text(`Generado: ${new Date().toLocaleString('es-CL')}`, { align: 'center' });
+    doc.fontSize(10).fillColor('#666').text(inventoryFilterSubtitle(query, { categoryName, locationName, eventName }), {
+      align: 'center',
+    });
+    doc.fontSize(9).fillColor('#999').text(`Generado: ${new Date().toLocaleString('es-CO')}`, { align: 'center' });
     doc.moveDown(2);
 
     const colWidths = [55, 100, 55, 65, 75, 65, 90];
@@ -270,8 +319,8 @@ router.get('/inventory/pdf', requirePermission('reports.export'), async (req, re
         d.brand,
         d.model,
         d.category?.name ?? '',
-        d.status,
-        String(d.location).replace(/_/g, ' '),
+        statusLabel(d.status),
+        locLabel(d.location, names),
       ];
       x = 45;
       row.forEach((val, i) => {
@@ -295,12 +344,10 @@ router.get('/inventory/pdf', requirePermission('reports.export'), async (req, re
   }
 });
 
-// Inventario completo en Excel.
+// Inventario en Excel (con filtros por categoría, lugar y evento).
 router.get('/inventory/export', requirePermission('reports.export'), async (req: AuthRequest, res, next) => {
   try {
-    const categoryId = req.query.categoryId as string | undefined;
-    const where: Record<string, unknown> = { deletedAt: null };
-    if (categoryId) where.categoryId = categoryId;
+    const where = await buildInventoryWhere(req.query as Record<string, unknown>);
     const devices = await prisma.device.findMany({
       where,
       include: { category: { select: { name: true } } },
@@ -318,7 +365,7 @@ router.get('/inventory/export', requirePermission('reports.export'), async (req:
         Modelo: d.model,
         'Número de serie': d.serialNumber ?? '',
         Categoría: d.category?.name ?? '',
-        Estado: d.status,
+        Estado: statusLabel(d.status),
         Ubicación: locLabel(d.location, names),
         'Condición (%)': d.condition,
         Proveedor: d.supplier ?? '',
@@ -328,7 +375,11 @@ router.get('/inventory/export', requirePermission('reports.export'), async (req:
       return base;
     });
 
-    const ws = XLSX.utils.json_to_sheet(rows);
+    const ws = XLSX.utils.json_to_sheet(
+      rows.length
+        ? rows
+        : [{ Código: '', Nombre: '', Marca: '', Modelo: '', Categoría: '', Estado: '', Ubicación: '' }]
+    );
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Inventario');
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
