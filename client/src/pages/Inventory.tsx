@@ -48,10 +48,49 @@ export default function Inventory() {
   const [locationFilter, setLocationFilter] = useState<string | null>(null);
   const [needsReview, setNeedsReview] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [importErrors, setImportErrors] = useState<{ row: number; message: string }[] | null>(null);
-  type ValidationRow = { row: number; valid: boolean; errors: string[]; corrections: { field: string; from: string; to: string }[] };
+  const [importErrors, setImportErrors] = useState<
+    {
+      row: number;
+      message: string;
+      values?: {
+        nombre?: string;
+        marca?: string;
+        modelo?: string;
+        serie?: string;
+        categoria?: string;
+        estado?: string;
+        ubicacion?: string;
+        precio?: string;
+        proveedor?: string;
+        notas?: string;
+        observacion?: string;
+        condicion?: string;
+      };
+    }[] | null
+  >(null);
+  type ValidationRow = {
+    row: number;
+    valid: boolean;
+    errors: string[];
+    corrections: { field: string; from: string; to: string }[];
+    values?: {
+      nombre: string;
+      marca: string;
+      modelo: string;
+      serie: string;
+      categoria: string;
+      estado: string;
+      ubicacion: string;
+      precio: string;
+      proveedor: string;
+      notas: string;
+      observacion: string;
+      condicion: string;
+    };
+  };
   type ValidateResult = { headerErrors?: string; totalRows: number; validCount: number; invalidCount: number; rows: ValidationRow[] };
   const [validationResult, setValidationResult] = useState<ValidateResult | null>(null);
+  const [downloadingErrors, setDownloadingErrors] = useState(false);
   const [fileToImport, setFileToImport] = useState<File | null>(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -180,7 +219,14 @@ export default function Inventory() {
     try {
       const formData = new FormData();
       formData.append('file', fileToImport);
-      const { data } = await api.post<{ success: number; errors?: { row: number; message: string }[] }>('/api/import/devices', formData, {
+      const { data } = await api.post<{
+        success: number;
+        errors?: {
+          row: number;
+          message: string;
+          values?: ValidationRow['values'];
+        }[];
+      }>('/api/import/devices', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       queryClient.invalidateQueries({ queryKey: ['devices'] });
@@ -209,6 +255,49 @@ export default function Inventory() {
     } finally {
       setImporting(false);
     }
+  };
+
+  const downloadErrorReport = async (
+    rows: {
+      row: number;
+      message: string;
+      values?: Partial<NonNullable<ValidationRow['values']>>;
+    }[]
+  ) => {
+    if (!rows.length) return;
+    setDownloadingErrors(true);
+    try {
+      const { data } = await api.post('/api/import/devices/error-report', { rows }, { responseType: 'blob' });
+      const blob = data as Blob;
+      if (blob.type?.includes('application/json')) {
+        const json = JSON.parse(await blob.text());
+        throw new Error(json.error || 'Error del servidor');
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'errores-importacion-equipos.xlsx';
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Plantilla de errores descargada');
+    } catch (err: unknown) {
+      const msg = (err as Error)?.message || 'No se pudo descargar la plantilla de errores';
+      toast.error(msg);
+    } finally {
+      setDownloadingErrors(false);
+    }
+  };
+
+  const downloadValidationErrors = () => {
+    if (!validationResult) return;
+    const rows = validationResult.rows
+      .filter((r) => !r.valid)
+      .map((r) => ({
+        row: r.row,
+        message: r.errors.join('. '),
+        values: r.values,
+      }));
+    void downloadErrorReport(rows);
   };
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -743,12 +832,27 @@ export default function Inventory() {
                   </div>
                   {validationResult.invalidCount > 0 && (
                     <div>
-                      <h4 className="font-medium text-foreground mb-2">Errores por fila (corrige en Excel y vuelve a validar)</h4>
+                      <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                        <h4 className="font-medium text-foreground">Errores por fila (corrige en Excel y vuelve a validar)</h4>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={downloadValidationErrors}
+                          disabled={downloadingErrors}
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          {downloadingErrors ? 'Descargando...' : 'Descargar plantilla de errores'}
+                        </Button>
+                      </div>
                       <ul className="space-y-1.5 text-sm max-h-48 overflow-y-auto">
                         {validationResult.rows.filter((r) => !r.valid).map((r, i) => (
                           <li key={i} className="flex gap-2 py-1.5 px-2 rounded bg-red-500/10 border border-red-500/30">
                             <span className="font-mono text-primary shrink-0">Fila {r.row}</span>
-                            <span className="text-foreground">{r.errors.join('. ')}</span>
+                            <span className="text-foreground">
+                              {[r.values?.nombre, r.values?.marca, r.values?.modelo].filter(Boolean).join(' · ')}
+                              {r.values?.nombre || r.values?.marca || r.values?.modelo ? ' — ' : ''}
+                              {r.errors.join('. ')}
+                            </span>
                           </li>
                         ))}
                       </ul>
@@ -776,7 +880,18 @@ export default function Inventory() {
               )}
             </div>
             {!validationResult.headerErrors && (
-              <div className="p-4 border-t border-border flex gap-2 justify-end shrink-0">
+              <div className="p-4 border-t border-border flex gap-2 justify-end shrink-0 flex-wrap">
+                {validationResult.invalidCount > 0 && (
+                  <Button
+                    variant="outline"
+                    onClick={downloadValidationErrors}
+                    disabled={downloadingErrors || importing}
+                    className="mr-auto"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    {downloadingErrors ? 'Descargando...' : 'Plantilla de errores'}
+                  </Button>
+                )}
                 <Button variant="outline" onClick={() => { setValidationResult(null); setFileToImport(null); }} disabled={importing}>
                   Cancelar
                 </Button>
@@ -803,16 +918,31 @@ export default function Inventory() {
             </div>
             <div className="overflow-y-auto p-4 flex-1 min-h-0">
               <p className="text-sm text-muted mb-3">
-                Revisa la plantilla: cada fila indica el número de fila en Excel y el motivo del error. Corrige y vuelve a importar.
+                Cada fila indica el número en Excel y el motivo. Descarga la plantilla de errores para corregir y volver a importar.
               </p>
               <ul className="space-y-1.5 text-sm">
                 {importErrors.map((err, i) => (
                   <li key={i} className="flex gap-2 py-1.5 px-2 rounded bg-card-hover/50 border border-border/50">
                     <span className="font-mono text-primary shrink-0">Fila {err.row}</span>
-                    <span className="text-foreground break-words">{err.message}</span>
+                    <span className="text-foreground break-words">
+                      {[err.values?.nombre, err.values?.marca, err.values?.modelo].filter(Boolean).join(' · ')}
+                      {err.values?.nombre || err.values?.marca || err.values?.modelo ? ' — ' : ''}
+                      {err.message}
+                    </span>
                   </li>
                 ))}
               </ul>
+            </div>
+            <div className="p-4 border-t border-border flex gap-2 justify-end shrink-0">
+              <Button
+                variant="outline"
+                onClick={() => void downloadErrorReport(importErrors)}
+                disabled={downloadingErrors}
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {downloadingErrors ? 'Descargando...' : 'Descargar plantilla de errores'}
+              </Button>
+              <Button onClick={() => setImportErrors(null)}>Cerrar</Button>
             </div>
           </div>
         </div>

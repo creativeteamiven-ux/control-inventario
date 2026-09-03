@@ -15,7 +15,7 @@ import {
   Loader2,
   CheckCircle2,
   SwitchCamera,
-  ShoppingCart,
+  Truck,
   Check,
   CalendarDays,
   ListPlus,
@@ -704,7 +704,7 @@ export default function Scanner() {
                 </>
               ) : (
                 <>
-                  <ShoppingCart className="h-4 w-4 mr-2" /> Agregar al carrito de traslado
+                  <Truck className="h-4 w-4 mr-2" /> Agregar al carrito de traslado
                 </>
               )}
             </Button>

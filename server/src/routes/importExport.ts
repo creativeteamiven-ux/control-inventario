@@ -92,6 +92,21 @@ export type ValidationRow = {
   valid: boolean;
   errors: string[];
   corrections: { field: string; from: string; to: string }[];
+  /** Datos de la fila (para plantilla de errores) */
+  values?: {
+    nombre: string;
+    marca: string;
+    modelo: string;
+    serie: string;
+    categoria: string;
+    estado: string;
+    ubicacion: string;
+    precio: string;
+    proveedor: string;
+    notas: string;
+    observacion: string;
+    condicion: string;
+  };
 };
 
 export type ValidateDevicesResult = {
@@ -114,7 +129,11 @@ function validateDeviceRows(
   const slugIdx = headers.findIndex((h) => /categoria|slug/i.test(h));
   const statusIdx = headers.findIndex((h) => /estado/i.test(h));
   const locIdx = headers.findIndex((h) => /ubicacion|ubicación/i.test(h));
+  const serialIdx = headers.findIndex((h) => /serie/i.test(h));
   const priceIdx = headers.findIndex((h) => /precio/i.test(h));
+  const supplierIdx = headers.findIndex((h) => /proveedor/i.test(h));
+  const notesIdx = headers.findIndex((h) => /notas/i.test(h));
+  const observationIdx = headers.findIndex((h) => /observacion|observación/i.test(h));
   const condIdx = headers.findIndex((h) => /condicion|condición/i.test(h));
 
   const result: ValidateDevicesResult = { totalRows: Math.max(0, rows.length - 1), validCount: 0, invalidCount: 0, rows: [] };
@@ -161,10 +180,25 @@ function validateDeviceRows(
       if (isNaN(n) || n < 0 || n > 100) errors.push('Condición debe ser un número entre 0 y 100');
     }
 
+    const values = {
+      nombre: name,
+      marca: brand,
+      modelo: model,
+      serie: serialIdx >= 0 ? String(row[serialIdx] ?? '').trim() : '',
+      categoria: slugIdx >= 0 ? String(row[slugIdx] ?? '').trim() : '',
+      estado: statusIdx >= 0 ? String(row[statusIdx] ?? '').trim() : '',
+      ubicacion: locIdx >= 0 ? String(row[locIdx] ?? '').trim() : '',
+      precio: priceIdx >= 0 ? String(row[priceIdx] ?? '').trim() : '',
+      proveedor: supplierIdx >= 0 ? String(row[supplierIdx] ?? '').trim() : '',
+      notas: notesIdx >= 0 ? String(row[notesIdx] ?? '').trim() : '',
+      observacion: observationIdx >= 0 ? String(row[observationIdx] ?? '').trim() : '',
+      condicion: condIdx >= 0 ? String(row[condIdx] ?? '').trim() : '',
+    };
+
     const valid = errors.length === 0;
     if (valid) result.validCount++;
     else result.invalidCount++;
-    result.rows.push({ row: i + 1, valid, errors, corrections });
+    result.rows.push({ row: i + 1, valid, errors, corrections, values });
   }
   return result;
 }
@@ -245,22 +279,62 @@ router.post('/devices', requirePermission('inventory.export'), upload.single('fi
       slugToId.set(c.name.toLowerCase(), c.id);
     });
 
-    const results: { success: number; errors: { row: number; message: string }[] } = { success: 0, errors: [] };
+    const results: {
+      success: number;
+      errors: {
+        row: number;
+        message: string;
+        values?: {
+          nombre: string;
+          marca: string;
+          modelo: string;
+          serie: string;
+          categoria: string;
+          estado: string;
+          ubicacion: string;
+          precio: string;
+          proveedor: string;
+          notas: string;
+          observacion: string;
+          condicion: string;
+        };
+      }[];
+    } = { success: 0, errors: [] };
     const userId = req.user!.userId;
+
+    const rowValues = (row: string[]) => ({
+      nombre: String(row[nameIdx] ?? '').trim(),
+      marca: String(row[brandIdx] ?? '').trim(),
+      modelo: String(row[modelIdx] ?? '').trim(),
+      serie: serialIdx >= 0 ? String(row[serialIdx] ?? '').trim() : '',
+      categoria: slugIdx >= 0 ? String(row[slugIdx] ?? '').trim() : '',
+      estado: statusIdx >= 0 ? String(row[statusIdx] ?? '').trim() : '',
+      ubicacion: locIdx >= 0 ? String(row[locIdx] ?? '').trim() : '',
+      precio: priceIdx >= 0 ? String(row[priceIdx] ?? '').trim() : '',
+      proveedor: supplierIdx >= 0 ? String(row[supplierIdx] ?? '').trim() : '',
+      notas: notesIdx >= 0 ? String(row[notesIdx] ?? '').trim() : '',
+      observacion: observationIdx >= 0 ? String(row[observationIdx] ?? '').trim() : '',
+      condicion: condIdx >= 0 ? String(row[condIdx] ?? '').trim() : '',
+    });
 
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i] || [];
       const name = String(row[nameIdx] ?? '').trim();
       const brand = String(row[brandIdx] ?? '').trim();
       const model = String(row[modelIdx] ?? '').trim();
+      const values = rowValues(row);
       if (!name || !brand || !model) {
-        results.errors.push({ row: i + 1, message: 'Nombre, Marca y Modelo son obligatorios' });
+        results.errors.push({ row: i + 1, message: 'Nombre, Marca y Modelo son obligatorios', values });
         continue;
       }
       const slug = slugIdx >= 0 ? String(row[slugIdx] ?? '').trim().toLowerCase() : 'audio-pa';
       const categoryId = slugToId.get(slug) || categories[0]?.id;
       if (!categoryId) {
-        results.errors.push({ row: i + 1, message: 'Categor?a no encontrada. Use: consolas, microfonos, parlantes, etc.' });
+        results.errors.push({
+          row: i + 1,
+          message: 'Categoría no encontrada. Use: consolas, microfonos, parlantes, etc.',
+          values,
+        });
         continue;
       }
       const prefix = slug.split('-')[0].toUpperCase().slice(0, 3) || 'EQP';
@@ -297,11 +371,106 @@ router.post('/devices', requirePermission('inventory.export'), upload.single('fi
         });
         results.success++;
       } catch (err) {
-        results.errors.push({ row: i + 1, message: (err as Error).message });
+        results.errors.push({ row: i + 1, message: (err as Error).message, values });
       }
     }
 
     res.json(results);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Descargar plantilla Excel con filas que fallaron (validación o importación) */
+router.post('/devices/error-report', requirePermission('inventory.export'), async (req: AuthRequest, res, next) => {
+  try {
+    const body = req.body as {
+      rows?: {
+        row: number;
+        message: string;
+        values?: {
+          nombre?: string;
+          marca?: string;
+          modelo?: string;
+          serie?: string;
+          categoria?: string;
+          estado?: string;
+          ubicacion?: string;
+          precio?: string;
+          proveedor?: string;
+          notas?: string;
+          observacion?: string;
+          condicion?: string;
+        };
+      }[];
+    };
+    const rows = body.rows ?? [];
+    if (!rows.length) throw new AppError(400, 'No hay filas con error para exportar');
+
+    const headers = [
+      'Fila_Excel',
+      'Error',
+      'Nombre',
+      'Marca',
+      'Modelo',
+      'Serie',
+      'Categoria_Slug',
+      'Estado',
+      'Ubicacion',
+      'Precio',
+      'Proveedor',
+      'Notas',
+      'Observacion',
+      'Condicion',
+    ];
+    const data = rows.map((r) => [
+      r.row,
+      r.message,
+      r.values?.nombre ?? '',
+      r.values?.marca ?? '',
+      r.values?.modelo ?? '',
+      r.values?.serie ?? '',
+      r.values?.categoria ?? '',
+      r.values?.estado ?? '',
+      r.values?.ubicacion ?? '',
+      r.values?.precio ?? '',
+      r.values?.proveedor ?? '',
+      r.values?.notas ?? '',
+      r.values?.observacion ?? '',
+      r.values?.condicion ?? '',
+    ]);
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+    ws['!cols'] = [
+      { wch: 12 },
+      { wch: 55 },
+      { wch: 24 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 14 },
+      { wch: 22 },
+      { wch: 10 },
+      { wch: 16 },
+      { wch: 20 },
+      { wch: 24 },
+      { wch: 10 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, 'Errores');
+    const guide = XLSX.utils.aoa_to_sheet([
+      ['Guía'],
+      ['Esta hoja lista los equipos que no se pudieron cargar y el motivo del error.'],
+      ['Corrige los datos en las columnas Nombre–Condicion, elimina la columna Error (y Fila_Excel si quieres),'],
+      ['y vuelve a importar el archivo desde Inventario → Importar.'],
+      ['Las columnas de datos coinciden con la plantilla de equipos.'],
+    ]);
+    XLSX.utils.book_append_sheet(wb, guide, 'Instrucciones');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=errores-importacion-equipos.xlsx');
+    res.send(Buffer.from(buf));
   } catch (e) {
     next(e);
   }
