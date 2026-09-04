@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Camera, CameraOff, Flashlight, FlashlightOff, Loader2, SwitchCamera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { getVideoTrackFromReader, setTrackTorch, trackSupportsTorch } from '@/lib/cameraTorch';
+import {
+  getVideoTrackFromReader,
+  pickPreferredScanCamera,
+  setTrackTorch,
+  trackSupportsTorch,
+  waitForTorchSupport,
+} from '@/lib/cameraTorch';
 import { cn } from '@/lib/utils';
 
 const BARCODE_FORMATS = [
@@ -15,12 +21,6 @@ const BARCODE_FORMATS = [
   Html5QrcodeSupportedFormats.ITF,
   Html5QrcodeSupportedFormats.CODABAR,
 ];
-
-function pickDefaultCamera(cams: { id: string; label: string }[]) {
-  if (!cams.length) return undefined;
-  const back = cams.find((c) => /back|rear|environment|trasera|posterior/i.test(c.label));
-  return (back ?? cams[cams.length - 1]).id;
-}
 
 function barcodeScanBox(viewW: number, viewH: number) {
   return { width: Math.floor(viewW * 0.92), height: Math.floor(Math.min(viewH * 0.32, 140)) };
@@ -38,6 +38,8 @@ export default function BarcodeScanner({ readerId, active, onScan, className }: 
   const isStartingRef = useRef(false);
   const lastScanRef = useRef<{ code: string; at: number } | null>(null);
   const onScanRef = useRef(onScan);
+  const camerasRef = useRef<{ id: string; label: string }[]>([]);
+  const selectedCameraIdRef = useRef<string | null>(null);
   onScanRef.current = onScan;
 
   const [scanning, setScanning] = useState(false);
@@ -46,17 +48,14 @@ export default function BarcodeScanner({ readerId, active, onScan, className }: 
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
   const [torchOn, setTorchOn] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
+  const [torchCameraIds, setTorchCameraIds] = useState<Set<string>>(() => new Set());
+
+  camerasRef.current = cameras;
+  selectedCameraIdRef.current = selectedCameraId;
 
   const secureContext =
     typeof window !== 'undefined' &&
     (window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
-
-  const refreshTorchSupport = useCallback(() => {
-    const track = getVideoTrackFromReader(readerId);
-    const ok = trackSupportsTorch(track);
-    setTorchSupported(ok);
-    if (!ok) setTorchOn(false);
-  }, [readerId]);
 
   const stopCamera = useCallback(async () => {
     const track = getVideoTrackFromReader(readerId);
@@ -82,7 +81,8 @@ export default function BarcodeScanner({ readerId, active, onScan, className }: 
 
   const startCamera = useCallback(
     async (cameraId?: string) => {
-      if (isStartingRef.current || scannerRef.current || !active) return;
+      const alreadyRunning = scannerRef.current !== null;
+      if (isStartingRef.current || alreadyRunning || !active) return;
       if (!secureContext) {
         setCameraError('La cámara requiere HTTPS o localhost.');
         return;
@@ -91,18 +91,22 @@ export default function BarcodeScanner({ readerId, active, onScan, className }: 
       lastScanRef.current = null;
       isStartingRef.current = true;
       try {
-        let cams = cameras;
+        let cams = camerasRef.current;
         if (!cams.length) {
           try {
             const found = await Html5Qrcode.getCameras();
             cams = found.map((c) => ({ id: c.id, label: c.label || 'Cámara' }));
+            camerasRef.current = cams;
             setCameras(cams);
           } catch {
             cams = [];
           }
         }
-        const camId = cameraId ?? selectedCameraId ?? pickDefaultCamera(cams);
-        if (camId) setSelectedCameraId(camId);
+        const camId = cameraId ?? selectedCameraIdRef.current ?? pickPreferredScanCamera(cams);
+        if (camId) {
+          selectedCameraIdRef.current = camId;
+          setSelectedCameraId(camId);
+        }
 
         const html5 = new Html5Qrcode(readerId, {
           verbose: false,
@@ -134,9 +138,17 @@ export default function BarcodeScanner({ readerId, active, onScan, className }: 
         );
         setScanning(true);
         setTorchOn(false);
-        // Capacidades torch suelen estar listas tras un frame
-        requestAnimationFrame(() => refreshTorchSupport());
-        setTimeout(refreshTorchSupport, 400);
+
+        const hasTorch = await waitForTorchSupport(readerId);
+        setTorchSupported(hasTorch);
+        if (hasTorch && camId) {
+          setTorchCameraIds((prev) => {
+            if (prev.has(camId)) return prev;
+            const next = new Set(prev);
+            next.add(camId);
+            return next;
+          });
+        }
       } catch (err) {
         scannerRef.current = null;
         const msg = err instanceof Error ? err.message : String(err);
@@ -145,7 +157,7 @@ export default function BarcodeScanner({ readerId, active, onScan, className }: 
         isStartingRef.current = false;
       }
     },
-    [active, secureContext, cameras, selectedCameraId, readerId, refreshTorchSupport]
+    [active, secureContext, readerId]
   );
 
   const toggleTorch = async () => {
@@ -169,7 +181,6 @@ export default function BarcodeScanner({ readerId, active, onScan, className }: 
 
   const switchCamera = async (id: string) => {
     await stopCamera();
-    setSelectedCameraId(id);
     await startCamera(id);
   };
 
@@ -224,11 +235,11 @@ export default function BarcodeScanner({ readerId, active, onScan, className }: 
               <select
                 value={selectedCameraId ?? ''}
                 onChange={(e) => switchCamera(e.target.value)}
-                className="h-8 pl-8 pr-2 rounded-md bg-card border border-border text-xs max-w-[180px]"
+                className="h-8 pl-8 pr-2 rounded-md bg-card border border-border text-xs max-w-[200px]"
               >
                 {cameras.map((c, i) => (
                   <option key={c.id} value={c.id}>
-                    {c.label || `Cámara ${i + 1}`}
+                    {(c.label || `Cámara ${i + 1}`) + (torchCameraIds.has(c.id) ? ' · flash' : '')}
                   </option>
                 ))}
               </select>

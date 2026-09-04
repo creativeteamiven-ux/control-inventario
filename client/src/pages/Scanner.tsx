@@ -27,7 +27,13 @@ import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
 import { addToStoredCart, getStoredCart } from '@/lib/transferCart';
 import { getBuildEventId, setBuildEventId } from '@/lib/eventBuild';
-import { getVideoTrackFromReader, setTrackTorch, trackSupportsTorch } from '@/lib/cameraTorch';
+import {
+  getVideoTrackFromReader,
+  pickPreferredScanCamera,
+  setTrackTorch,
+  trackSupportsTorch,
+  waitForTorchSupport,
+} from '@/lib/cameraTorch';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { deviceStatusLabel } from '@/lib/statusLabels';
@@ -67,12 +73,6 @@ const QUICK_STATUSES: { value: string; label: string; className: string }[] = [
 interface CameraOption {
   id: string;
   label: string;
-}
-
-function pickDefaultCamera(cams: CameraOption[]): string | undefined {
-  if (!cams.length) return undefined;
-  const back = cams.find((c) => /back|rear|environment|trasera|posterior/i.test(c.label));
-  return (back ?? cams[cams.length - 1]).id;
 }
 
 /** Zona de escaneo ancha y baja, ideal para códigos de barras horizontales. */
@@ -207,6 +207,8 @@ export default function Scanner() {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isStartingRef = useRef(false);
   const lastScanRef = useRef<{ code: string; at: number } | null>(null);
+  const camerasRef = useRef<CameraOption[]>([]);
+  const selectedCameraIdRef = useRef<string | null>(null);
 
   const [scanning, setScanning] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -219,17 +221,14 @@ export default function Scanner() {
   const [addedToCart, setAddedToCart] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
+  const [torchCameraIds, setTorchCameraIds] = useState<Set<string>>(() => new Set());
+
+  camerasRef.current = cameras;
+  selectedCameraIdRef.current = selectedCameraId;
 
   const secureContext =
     typeof window !== 'undefined' &&
     (window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
-
-  const refreshTorchSupport = useCallback(() => {
-    const track = getVideoTrackFromReader(READER_ID);
-    const ok = trackSupportsTorch(track);
-    setTorchSupported(ok);
-    if (!ok) setTorchOn(false);
-  }, []);
 
   const stopCamera = useCallback(async () => {
     const track = getVideoTrackFromReader(READER_ID);
@@ -285,7 +284,8 @@ export default function Scanner() {
 
   const startCamera = useCallback(
     async (cameraId?: string) => {
-      if (isStartingRef.current || scannerRef.current) return;
+      const alreadyRunning = scannerRef.current !== null;
+      if (isStartingRef.current || alreadyRunning) return;
       if (!secureContext) {
         setCameraError(
           'La cámara requiere una conexión segura (HTTPS) o localhost. Abre la app por HTTPS para escanear desde el celular.'
@@ -301,19 +301,24 @@ export default function Scanner() {
       setNotFoundCode(null);
       lastScanRef.current = null;
       isStartingRef.current = true;
+
       try {
-        let cams = cameras;
+        let cams = camerasRef.current;
         if (!cams.length) {
           try {
             const found = await Html5Qrcode.getCameras();
             cams = found.map((c) => ({ id: c.id, label: c.label || 'Cámara' }));
+            camerasRef.current = cams;
             setCameras(cams);
           } catch {
             cams = [];
           }
         }
-        const camId = cameraId ?? selectedCameraId ?? pickDefaultCamera(cams);
-        if (camId) setSelectedCameraId(camId);
+        const camId = cameraId ?? selectedCameraIdRef.current ?? pickPreferredScanCamera(cams);
+        if (camId) {
+          selectedCameraIdRef.current = camId;
+          setSelectedCameraId(camId);
+        }
 
         const html5 = new Html5Qrcode(READER_ID, {
           verbose: false,
@@ -357,8 +362,17 @@ export default function Scanner() {
         );
         setScanning(true);
         setTorchOn(false);
-        requestAnimationFrame(() => refreshTorchSupport());
-        setTimeout(refreshTorchSupport, 400);
+
+        const hasTorch = await waitForTorchSupport(READER_ID);
+        setTorchSupported(hasTorch);
+        if (hasTorch && camId) {
+          setTorchCameraIds((prev) => {
+            if (prev.has(camId)) return prev;
+            const next = new Set(prev);
+            next.add(camId);
+            return next;
+          });
+        }
       } catch (err) {
         scannerRef.current = null;
         const msg = err instanceof Error ? err.message : String(err);
@@ -373,7 +387,7 @@ export default function Scanner() {
         isStartingRef.current = false;
       }
     },
-    [secureContext, cameras, selectedCameraId, handleScan, refreshTorchSupport]
+    [secureContext, handleScan]
   );
 
   const toggleTorch = async () => {
@@ -390,7 +404,6 @@ export default function Scanner() {
   const switchCamera = useCallback(
     async (id: string) => {
       await stopCamera();
-      setSelectedCameraId(id);
       await startCamera(id);
     },
     [stopCamera, startCamera]
@@ -584,6 +597,28 @@ export default function Scanner() {
               <p className="text-sm text-foreground">Buscando equipo...</p>
             </div>
           )}
+          {device && !scanning && !looking && (
+            <div className="absolute inset-0 bg-card-hover">
+              {device.images?.[0]?.url ? (
+                <img
+                  src={device.images[0].url}
+                  alt={device.name}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="h-full w-full flex flex-col items-center justify-center gap-3 bg-black/80">
+                  <Package className="h-16 w-16 text-muted" />
+                  <p className="text-sm text-muted">Sin imagen del equipo</p>
+                </div>
+              )}
+            </div>
+          )}
+          {notFoundCode && !scanning && !looking && !device && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80 p-6 text-center">
+              <AlertTriangle className="h-12 w-12 text-amber-400" />
+              <p className="text-sm text-foreground">Equipo no encontrado</p>
+            </div>
+          )}
         </div>
         {scanning && (
           <div className="p-3 flex flex-wrap items-center justify-center gap-2 border-t border-border">
@@ -612,7 +647,7 @@ export default function Scanner() {
                 >
                   {cameras.map((c, i) => (
                     <option key={c.id} value={c.id}>
-                      {c.label || `Cámara ${i + 1}`}
+                      {(c.label || `Cámara ${i + 1}`) + (torchCameraIds.has(c.id) ? ' · flash' : '')}
                     </option>
                   ))}
                 </select>
@@ -632,13 +667,6 @@ export default function Scanner() {
           className="bg-card rounded-xl border border-border overflow-hidden"
         >
           <div className="flex items-start gap-4 p-4">
-            <div className="h-20 w-20 rounded-lg bg-card-hover flex items-center justify-center overflow-hidden shrink-0">
-              {device.images?.[0]?.url ? (
-                <img src={device.images[0].url} alt={device.name} className="h-full w-full object-cover" />
-              ) : (
-                <Package className="h-9 w-9 text-muted" />
-              )}
-            </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={cn('px-2.5 py-1 rounded-full text-xs font-medium', STATUS_BADGE[device.status] ?? 'bg-muted')}>
