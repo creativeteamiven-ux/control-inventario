@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { Camera, CameraOff, Loader2, SwitchCamera } from 'lucide-react';
+import { Camera, CameraOff, Flashlight, FlashlightOff, Loader2, SwitchCamera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { getVideoTrackFromReader, setTrackTorch, trackSupportsTorch } from '@/lib/cameraTorch';
 import { cn } from '@/lib/utils';
 
 const BARCODE_FORMATS = [
@@ -43,14 +44,30 @@ export default function BarcodeScanner({ readerId, active, onScan, className }: 
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameras, setCameras] = useState<{ id: string; label: string }[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
+  const [torchOn, setTorchOn] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
 
   const secureContext =
     typeof window !== 'undefined' &&
     (window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
 
+  const refreshTorchSupport = useCallback(() => {
+    const track = getVideoTrackFromReader(readerId);
+    const ok = trackSupportsTorch(track);
+    setTorchSupported(ok);
+    if (!ok) setTorchOn(false);
+  }, [readerId]);
+
   const stopCamera = useCallback(async () => {
+    const track = getVideoTrackFromReader(readerId);
+    if (track) await setTrackTorch(track, false);
     const inst = scannerRef.current;
-    if (!inst) return;
+    if (!inst) {
+      setScanning(false);
+      setTorchOn(false);
+      setTorchSupported(false);
+      return;
+    }
     try {
       if (inst.isScanning) await inst.stop();
       inst.clear();
@@ -59,7 +76,9 @@ export default function BarcodeScanner({ readerId, active, onScan, className }: 
     }
     scannerRef.current = null;
     setScanning(false);
-  }, []);
+    setTorchOn(false);
+    setTorchSupported(false);
+  }, [readerId]);
 
   const startCamera = useCallback(
     async (cameraId?: string) => {
@@ -114,6 +133,10 @@ export default function BarcodeScanner({ readerId, active, onScan, className }: 
           () => {}
         );
         setScanning(true);
+        setTorchOn(false);
+        // Capacidades torch suelen estar listas tras un frame
+        requestAnimationFrame(() => refreshTorchSupport());
+        setTimeout(refreshTorchSupport, 400);
       } catch (err) {
         scannerRef.current = null;
         const msg = err instanceof Error ? err.message : String(err);
@@ -122,8 +145,19 @@ export default function BarcodeScanner({ readerId, active, onScan, className }: 
         isStartingRef.current = false;
       }
     },
-    [active, secureContext, cameras, selectedCameraId, readerId]
+    [active, secureContext, cameras, selectedCameraId, readerId, refreshTorchSupport]
   );
+
+  const toggleTorch = async () => {
+    const track = getVideoTrackFromReader(readerId);
+    if (!trackSupportsTorch(track) || !track) {
+      setTorchSupported(false);
+      return;
+    }
+    const next = !torchOn;
+    const ok = await setTrackTorch(track, next);
+    if (ok) setTorchOn(next);
+  };
 
   useEffect(() => {
     if (active) void startCamera();
@@ -168,22 +202,38 @@ export default function BarcodeScanner({ readerId, active, onScan, className }: 
           </div>
         )}
       </div>
-      {scanning && cameras.length > 1 && (
-        <div className="p-2 flex justify-center border-t border-border">
-          <div className="relative flex items-center">
-            <SwitchCamera className="absolute left-2 h-4 w-4 text-muted pointer-events-none" />
-            <select
-              value={selectedCameraId ?? ''}
-              onChange={(e) => switchCamera(e.target.value)}
-              className="h-8 pl-8 pr-2 rounded-md bg-card border border-border text-xs max-w-[180px]"
+      {scanning && (torchSupported || cameras.length > 1) && (
+        <div className="p-2 flex flex-wrap items-center justify-center gap-2 border-t border-border">
+          {torchSupported && (
+            <Button
+              type="button"
+              variant={torchOn ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => void toggleTorch()}
+              className="min-h-touch"
+              aria-pressed={torchOn}
+              aria-label={torchOn ? 'Apagar flash' : 'Encender flash'}
             >
-              {cameras.map((c, i) => (
-                <option key={c.id} value={c.id}>
-                  {c.label || `Cámara ${i + 1}`}
-                </option>
-              ))}
-            </select>
-          </div>
+              {torchOn ? <Flashlight className="h-4 w-4 mr-2" /> : <FlashlightOff className="h-4 w-4 mr-2" />}
+              {torchOn ? 'Apagar flash' : 'Encender flash'}
+            </Button>
+          )}
+          {cameras.length > 1 && (
+            <div className="relative flex items-center">
+              <SwitchCamera className="absolute left-2 h-4 w-4 text-muted pointer-events-none" />
+              <select
+                value={selectedCameraId ?? ''}
+                onChange={(e) => switchCamera(e.target.value)}
+                className="h-8 pl-8 pr-2 rounded-md bg-card border border-border text-xs max-w-[180px]"
+              >
+                {cameras.map((c, i) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label || `Cámara ${i + 1}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       )}
     </div>

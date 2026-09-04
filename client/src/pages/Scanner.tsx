@@ -20,11 +20,14 @@ import {
   CalendarDays,
   ListPlus,
   ExternalLink,
+  Flashlight,
+  FlashlightOff,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
 import { addToStoredCart, getStoredCart } from '@/lib/transferCart';
 import { getBuildEventId, setBuildEventId } from '@/lib/eventBuild';
+import { getVideoTrackFromReader, setTrackTorch, trackSupportsTorch } from '@/lib/cameraTorch';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { deviceStatusLabel } from '@/lib/statusLabels';
@@ -214,14 +217,30 @@ export default function Scanner() {
   const [cameras, setCameras] = useState<CameraOption[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
   const [addedToCart, setAddedToCart] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
 
   const secureContext =
     typeof window !== 'undefined' &&
     (window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
 
+  const refreshTorchSupport = useCallback(() => {
+    const track = getVideoTrackFromReader(READER_ID);
+    const ok = trackSupportsTorch(track);
+    setTorchSupported(ok);
+    if (!ok) setTorchOn(false);
+  }, []);
+
   const stopCamera = useCallback(async () => {
+    const track = getVideoTrackFromReader(READER_ID);
+    if (track) await setTrackTorch(track, false);
     const inst = scannerRef.current;
-    if (!inst) return;
+    if (!inst) {
+      setScanning(false);
+      setTorchOn(false);
+      setTorchSupported(false);
+      return;
+    }
     try {
       if (inst.isScanning) await inst.stop();
       inst.clear();
@@ -230,6 +249,8 @@ export default function Scanner() {
     }
     scannerRef.current = null;
     setScanning(false);
+    setTorchOn(false);
+    setTorchSupported(false);
   }, []);
 
   const lookup = useCallback(async (code: string) => {
@@ -335,6 +356,9 @@ export default function Scanner() {
           }
         );
         setScanning(true);
+        setTorchOn(false);
+        requestAnimationFrame(() => refreshTorchSupport());
+        setTimeout(refreshTorchSupport, 400);
       } catch (err) {
         scannerRef.current = null;
         const msg = err instanceof Error ? err.message : String(err);
@@ -349,8 +373,19 @@ export default function Scanner() {
         isStartingRef.current = false;
       }
     },
-    [secureContext, cameras, selectedCameraId, handleScan]
+    [secureContext, cameras, selectedCameraId, handleScan, refreshTorchSupport]
   );
+
+  const toggleTorch = async () => {
+    const track = getVideoTrackFromReader(READER_ID);
+    if (!trackSupportsTorch(track) || !track) {
+      setTorchSupported(false);
+      return;
+    }
+    const next = !torchOn;
+    const ok = await setTrackTorch(track, next);
+    if (ok) setTorchOn(next);
+  };
 
   const switchCamera = useCallback(
     async (id: string) => {
@@ -552,6 +587,20 @@ export default function Scanner() {
         </div>
         {scanning && (
           <div className="p-3 flex flex-wrap items-center justify-center gap-2 border-t border-border">
+            {torchSupported && (
+              <Button
+                type="button"
+                variant={torchOn ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => void toggleTorch()}
+                className="min-h-touch"
+                aria-pressed={torchOn}
+                aria-label={torchOn ? 'Apagar flash' : 'Encender flash'}
+              >
+                {torchOn ? <Flashlight className="h-4 w-4 mr-2" /> : <FlashlightOff className="h-4 w-4 mr-2" />}
+                {torchOn ? 'Apagar flash' : 'Encender flash'}
+              </Button>
+            )}
             {cameras.length > 1 && (
               <div className="relative flex items-center">
                 <SwitchCamera className="absolute left-2.5 h-4 w-4 text-muted pointer-events-none" />
