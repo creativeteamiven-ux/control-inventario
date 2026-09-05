@@ -22,9 +22,11 @@ const BARCODE_FORMATS = [
   Html5QrcodeSupportedFormats.CODABAR,
 ];
 
+/** Ventana horizontal tipo “láser”: ancha y baja, alineada con el overlay visual. */
 function barcodeScanBox(viewW: number, viewH: number) {
-  // Zona ancha y un poco más alta: más fácil de enganchar el código al pasar rápido
-  return { width: Math.floor(viewW * 0.94), height: Math.floor(Math.min(viewH * 0.38, 168)) };
+  const width = Math.floor(Math.min(viewW * 0.88, viewW - 24));
+  const height = Math.floor(Math.min(Math.max(viewH * 0.16, 96), 132));
+  return { width, height };
 }
 
 const VIDEO_CONSTRAINTS_BASE = {
@@ -41,6 +43,7 @@ interface BarcodeScannerProps {
   sameCodeCooldownMs?: number;
   /** Pausa mínima entre dos códigos distintos (ms). Default 180. */
   betweenCodesMs?: number;
+  hint?: string;
 }
 
 export default function BarcodeScanner({
@@ -50,6 +53,7 @@ export default function BarcodeScanner({
   className,
   sameCodeCooldownMs = 650,
   betweenCodesMs = 180,
+  hint = 'Por favor ubica el código de barras del producto dentro de la zona de escáner',
 }: BarcodeScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isStartingRef = useRef(false);
@@ -70,6 +74,7 @@ export default function BarcodeScanner({
   const [torchOn, setTorchOn] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchCameraIds, setTorchCameraIds] = useState<Set<string>>(() => new Set());
+  const [flashOk, setFlashOk] = useState(false);
 
   camerasRef.current = cameras;
   selectedCameraIdRef.current = selectedCameraId;
@@ -139,10 +144,9 @@ export default function BarcodeScanner({
         await html5.start(
           camId ?? { facingMode: { ideal: 'environment' }, ...VIDEO_CONSTRAINTS_BASE },
           {
-            fps: 30,
+            fps: 45,
             qrbox: barcodeScanBox,
             disableFlip: false,
-            aspectRatio: 1.333,
             videoConstraints: camId
               ? { deviceId: { exact: camId }, ...VIDEO_CONSTRAINTS_BASE }
               : { facingMode: { ideal: 'environment' }, ...VIDEO_CONSTRAINTS_BASE },
@@ -158,6 +162,8 @@ export default function BarcodeScanner({
               if (prev.code !== code && gap < betweenRef.current) return;
             }
             lastScanRef.current = { code, at: now };
+            setFlashOk(true);
+            window.setTimeout(() => setFlashOk(false), 280);
             void onScanRef.current(code);
           },
           () => {}
@@ -212,25 +218,61 @@ export default function BarcodeScanner({
 
   return (
     <div className={cn('bg-card rounded-xl border border-border overflow-hidden', className)}>
-      <div className="relative bg-black aspect-[4/3] flex items-center justify-center">
-        <div id={readerId} className="w-full h-full [&_video]:h-full [&_video]:w-full [&_video]:object-cover" />
+      <div className="relative bg-black min-h-[min(68vh,560px)] h-[min(68vh,560px)] flex items-center justify-center overflow-hidden">
+        {/* Video a pantalla completa; ocultamos el sombreado nativo de html5-qrcode */}
+        <div
+          id={readerId}
+          className={cn(
+            'absolute inset-0 w-full h-full',
+            '[&_video]:!absolute [&_video]:!inset-0 [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover [&_video]:!max-w-none',
+            '[&_img]:hidden',
+            '[&_#qr-shaded-region]:!hidden [&_[id*="qr-shaded-region"]]:!hidden',
+            '[&_canvas]:hidden'
+          )}
+        />
+
+        {/* Visor: máscara oscura + ventana central (estilo app de inventario rápido) */}
         {scanning && (
-          <div className="absolute bottom-2 left-0 right-0 text-center pointer-events-none">
-            <span className="text-xs text-white/80 bg-black/50 px-3 py-1 rounded-full">Alinea el código en el recuadro</span>
+          <div className="absolute inset-0 z-10 pointer-events-none flex flex-col items-center justify-center px-4">
+            <p className="mb-5 max-w-[20rem] text-center text-[15px] leading-snug font-medium text-white drop-shadow-md">
+              {hint}
+            </p>
+            <div
+              className={cn(
+                'relative w-[min(88%,340px)] h-[112px] rounded-2xl border-2 transition-colors duration-200',
+                flashOk
+                  ? 'border-green-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.55),0_0_24px_rgba(74,222,128,0.55)]'
+                  : 'border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]'
+              )}
+            >
+              {/* Esquinas de guía */}
+              <span className="absolute -top-0.5 -left-0.5 h-5 w-5 border-t-[3px] border-l-[3px] border-white rounded-tl-xl" />
+              <span className="absolute -top-0.5 -right-0.5 h-5 w-5 border-t-[3px] border-r-[3px] border-white rounded-tr-xl" />
+              <span className="absolute -bottom-0.5 -left-0.5 h-5 w-5 border-b-[3px] border-l-[3px] border-white rounded-bl-xl" />
+              <span className="absolute -bottom-0.5 -right-0.5 h-5 w-5 border-b-[3px] border-r-[3px] border-white rounded-br-xl" />
+              {/* Línea de lectura */}
+              <span
+                className={cn(
+                  'absolute left-3 right-3 top-1/2 -translate-y-1/2 h-0.5 rounded-full',
+                  flashOk ? 'bg-green-400' : 'bg-red-500/80'
+                )}
+              />
+            </div>
           </div>
         )}
+
         {!scanning && !cameraError && active && (
-          <div className="absolute inset-0 flex items-center justify-center">
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/50">
             <Loader2 className="h-8 w-8 text-primary animate-spin" />
           </div>
         )}
         {!active && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
             <CameraOff className="h-10 w-10 text-muted" />
           </div>
         )}
         {cameraError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center bg-black/80">
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 p-4 text-center bg-black/80">
             <CameraOff className="h-10 w-10 text-red-400" />
             <p className="text-sm text-red-300">{cameraError}</p>
             <Button size="sm" variant="outline" onClick={() => startCamera()}>
@@ -238,41 +280,42 @@ export default function BarcodeScanner({
             </Button>
           </div>
         )}
-      </div>
-      {scanning && (torchSupported || cameras.length > 1) && (
-        <div className="p-2 flex flex-wrap items-center justify-center gap-2 border-t border-border">
-          {torchSupported && (
-            <Button
-              type="button"
-              variant={torchOn ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => void toggleTorch()}
-              className="min-h-touch"
-              aria-pressed={torchOn}
-              aria-label={torchOn ? 'Apagar flash' : 'Encender flash'}
-            >
-              {torchOn ? <Flashlight className="h-4 w-4 mr-2" /> : <FlashlightOff className="h-4 w-4 mr-2" />}
-              {torchOn ? 'Apagar flash' : 'Encender flash'}
-            </Button>
-          )}
-          {cameras.length > 1 && (
-            <div className="relative flex items-center">
-              <SwitchCamera className="absolute left-2 h-4 w-4 text-muted pointer-events-none" />
-              <select
-                value={selectedCameraId ?? ''}
-                onChange={(e) => switchCamera(e.target.value)}
-                className="h-8 pl-8 pr-2 rounded-md bg-card border border-border text-xs max-w-[200px]"
+
+        {scanning && (torchSupported || cameras.length > 1) && (
+          <div className="absolute bottom-3 left-0 right-0 z-20 flex flex-wrap items-center justify-center gap-2 px-3 pointer-events-auto">
+            {torchSupported && (
+              <Button
+                type="button"
+                variant={torchOn ? 'default' : 'secondary'}
+                size="sm"
+                onClick={() => void toggleTorch()}
+                className="min-h-touch bg-black/55 text-white border-white/20 hover:bg-black/70"
+                aria-pressed={torchOn}
+                aria-label={torchOn ? 'Apagar flash' : 'Encender flash'}
               >
-                {cameras.map((c, i) => (
-                  <option key={c.id} value={c.id}>
-                    {(c.label || `Cámara ${i + 1}`) + (torchCameraIds.has(c.id) ? ' · flash' : '')}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-        </div>
-      )}
+                {torchOn ? <Flashlight className="h-4 w-4 mr-2" /> : <FlashlightOff className="h-4 w-4 mr-2" />}
+                {torchOn ? 'Apagar flash' : 'Flash'}
+              </Button>
+            )}
+            {cameras.length > 1 && (
+              <div className="relative flex items-center">
+                <SwitchCamera className="absolute left-2 h-4 w-4 text-white/80 pointer-events-none" />
+                <select
+                  value={selectedCameraId ?? ''}
+                  onChange={(e) => switchCamera(e.target.value)}
+                  className="h-9 pl-8 pr-2 rounded-md bg-black/55 border border-white/20 text-xs text-white max-w-[200px]"
+                >
+                  {cameras.map((c, i) => (
+                    <option key={c.id} value={c.id} className="text-foreground">
+                      {(c.label || `Cámara ${i + 1}`) + (torchCameraIds.has(c.id) ? ' · flash' : '')}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

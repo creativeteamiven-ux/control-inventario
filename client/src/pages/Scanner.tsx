@@ -75,10 +75,10 @@ interface CameraOption {
   label: string;
 }
 
-/** Zona de escaneo ancha y baja, ideal para códigos de barras horizontales. */
+/** Ventana horizontal tipo “láser”: ancha y baja. */
 function barcodeScanBox(viewW: number, viewH: number) {
-  const width = Math.floor(viewW * 0.94);
-  const height = Math.floor(Math.min(viewH * 0.38, 168));
+  const width = Math.floor(Math.min(viewW * 0.88, viewW - 24));
+  const height = Math.floor(Math.min(Math.max(viewH * 0.16, 96), 132));
   return { width, height };
 }
 
@@ -346,10 +346,9 @@ export default function Scanner() {
         await html5.start(
           cameraSource,
           {
-            fps: 30,
+            fps: 45,
             qrbox: barcodeScanBox,
             disableFlip: false,
-            aspectRatio: 1.333,
             videoConstraints: camId
               ? {
                   deviceId: { exact: camId },
@@ -572,17 +571,33 @@ export default function Scanner() {
       {mode === 'lookup' && (
       <>
       <div className="bg-card rounded-xl border border-border overflow-hidden">
-        <div className="relative bg-black aspect-[4/3] flex items-center justify-center">
-          <div id={READER_ID} className="w-full h-full [&_video]:h-full [&_video]:w-full [&_video]:object-cover" />
+        <div className="relative bg-black min-h-[min(68vh,560px)] h-[min(68vh,560px)] flex items-center justify-center overflow-hidden">
+          <div
+            id={READER_ID}
+            className={cn(
+              'absolute inset-0 w-full h-full',
+              '[&_video]:!absolute [&_video]:!inset-0 [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover [&_video]:!max-w-none',
+              '[&_img]:hidden',
+              '[&_#qr-shaded-region]:!hidden [&_[id*="qr-shaded-region"]]:!hidden',
+              '[&_canvas]:hidden'
+            )}
+          />
           {scanning && (
-            <div className="absolute bottom-3 left-0 right-0 text-center pointer-events-none">
-              <span className="text-xs text-white/80 bg-black/50 px-3 py-1 rounded-full">
-                Alinea el código de barras en el recuadro
-              </span>
+            <div className="absolute inset-0 z-10 pointer-events-none flex flex-col items-center justify-center px-4">
+              <p className="mb-5 max-w-[20rem] text-center text-[15px] leading-snug font-medium text-white drop-shadow-md">
+                Por favor ubica el código de barras del producto dentro de la zona de escáner
+              </p>
+              <div className="relative w-[min(88%,340px)] h-[112px] rounded-2xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]">
+                <span className="absolute -top-0.5 -left-0.5 h-5 w-5 border-t-[3px] border-l-[3px] border-white rounded-tl-xl" />
+                <span className="absolute -top-0.5 -right-0.5 h-5 w-5 border-t-[3px] border-r-[3px] border-white rounded-tr-xl" />
+                <span className="absolute -bottom-0.5 -left-0.5 h-5 w-5 border-b-[3px] border-l-[3px] border-white rounded-bl-xl" />
+                <span className="absolute -bottom-0.5 -right-0.5 h-5 w-5 border-b-[3px] border-r-[3px] border-white rounded-br-xl" />
+                <span className="absolute left-3 right-3 top-1/2 -translate-y-1/2 h-0.5 rounded-full bg-red-500/80" />
+              </div>
             </div>
           )}
           {!scanning && !looking && !device && !notFoundCode && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center">
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 p-6 text-center">
               {cameraError ? (
                 <>
                   <CameraOff className="h-12 w-12 text-red-400" />
@@ -602,13 +617,13 @@ export default function Scanner() {
             </div>
           )}
           {looking && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70">
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/70">
               <Loader2 className="h-10 w-10 text-primary animate-spin" />
               <p className="text-sm text-foreground">Buscando equipo...</p>
             </div>
           )}
           {device && !scanning && !looking && (
-            <div className="absolute inset-0 bg-card-hover">
+            <div className="absolute inset-0 z-20 bg-card-hover">
               {device.images?.[0]?.url ? (
                 <img
                   src={device.images[0].url}
@@ -624,50 +639,55 @@ export default function Scanner() {
             </div>
           )}
           {notFoundCode && !scanning && !looking && !device && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80 p-6 text-center">
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/80 p-6 text-center">
               <AlertTriangle className="h-12 w-12 text-amber-400" />
               <p className="text-sm text-foreground">Equipo no encontrado</p>
             </div>
           )}
-        </div>
-        {scanning && (
-          <div className="p-3 flex flex-wrap items-center justify-center gap-2 border-t border-border">
-            {torchSupported && (
-              <Button
-                type="button"
-                variant={torchOn ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => void toggleTorch()}
-                className="min-h-touch"
-                aria-pressed={torchOn}
-                aria-label={torchOn ? 'Apagar flash' : 'Encender flash'}
-              >
-                {torchOn ? <Flashlight className="h-4 w-4 mr-2" /> : <FlashlightOff className="h-4 w-4 mr-2" />}
-                {torchOn ? 'Apagar flash' : 'Encender flash'}
-              </Button>
-            )}
-            {cameras.length > 1 && (
-              <div className="relative flex items-center">
-                <SwitchCamera className="absolute left-2.5 h-4 w-4 text-muted pointer-events-none" />
-                <select
-                  value={selectedCameraId ?? ''}
-                  onChange={(e) => switchCamera(e.target.value)}
-                  className="h-9 pl-8 pr-3 rounded-md bg-card border border-border text-sm max-w-[200px] truncate"
-                  aria-label="Seleccionar cámara"
+          {scanning && (
+            <div className="absolute bottom-3 left-0 right-0 z-20 flex flex-wrap items-center justify-center gap-2 px-3">
+              {torchSupported && (
+                <Button
+                  type="button"
+                  variant={torchOn ? 'default' : 'secondary'}
+                  size="sm"
+                  onClick={() => void toggleTorch()}
+                  className="min-h-touch bg-black/55 text-white border-white/20 hover:bg-black/70"
+                  aria-pressed={torchOn}
+                  aria-label={torchOn ? 'Apagar flash' : 'Encender flash'}
                 >
-                  {cameras.map((c, i) => (
-                    <option key={c.id} value={c.id}>
-                      {(c.label || `Cámara ${i + 1}`) + (torchCameraIds.has(c.id) ? ' · flash' : '')}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <Button variant="ghost" size="sm" onClick={stopCamera} className="min-h-touch">
-              <CameraOff className="h-4 w-4 mr-2" /> Detener
-            </Button>
-          </div>
-        )}
+                  {torchOn ? <Flashlight className="h-4 w-4 mr-2" /> : <FlashlightOff className="h-4 w-4 mr-2" />}
+                  {torchOn ? 'Apagar flash' : 'Flash'}
+                </Button>
+              )}
+              {cameras.length > 1 && (
+                <div className="relative flex items-center">
+                  <SwitchCamera className="absolute left-2.5 h-4 w-4 text-white/80 pointer-events-none" />
+                  <select
+                    value={selectedCameraId ?? ''}
+                    onChange={(e) => switchCamera(e.target.value)}
+                    className="h-9 pl-8 pr-3 rounded-md bg-black/55 border border-white/20 text-sm text-white max-w-[200px] truncate"
+                    aria-label="Seleccionar cámara"
+                  >
+                    {cameras.map((c, i) => (
+                      <option key={c.id} value={c.id} className="text-foreground">
+                        {(c.label || `Cámara ${i + 1}`) + (torchCameraIds.has(c.id) ? ' · flash' : '')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={stopCamera}
+                className="min-h-touch bg-black/55 text-white border-white/20 hover:bg-black/70"
+              >
+                <CameraOff className="h-4 w-4 mr-2" /> Detener
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
 
       {device && (
