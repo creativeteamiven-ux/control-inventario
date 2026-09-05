@@ -975,6 +975,52 @@ router.post('/:id/confirm-outbound', requirePermission('events.manage'), async (
   }
 });
 
+/**
+ * Iniciar fase de devolución/regreso manualmente.
+ * Requiere que la salida ya se haya enviado a Movimientos y no queden CHECK_OUT pendientes.
+ */
+router.post('/:id/start-return', requirePermission('events.manage'), async (req: AuthRequest, res, next) => {
+  try {
+    const event = await loadEvent(req.params.id);
+    if (!event) throw new AppError(404, 'Evento no encontrado');
+    if (event.status !== 'ACTIVE') throw new AppError(400, 'El evento no está activo');
+    if (event.currentPhase === 'INBOUND') {
+      const names = await locationNames();
+      return res.json({ ok: true, already: true, event: mapEventResponse(event, names) });
+    }
+
+    if (!event.items.length) throw new AppError(400, 'El evento no tiene equipos');
+    const missingOutbound = event.items.filter((i) => !i.outboundScannedAt || !i.outboundMovementId);
+    if (missingOutbound.length) {
+      throw new AppError(
+        400,
+        `Aún faltan ${missingOutbound.length} equipo(s) por verificar/enviar en la salida antes de iniciar la devolución`
+      );
+    }
+
+    const pendingOut = await prisma.movement.count({
+      where: { eventId: event.id, type: 'CHECK_OUT', status: 'PENDING' },
+    });
+    if (pendingOut > 0) {
+      throw new AppError(
+        400,
+        `Hay ${pendingOut} traslado(s) de salida pendientes de autorización en Movimientos. Autorízalos primero.`
+      );
+    }
+
+    await prisma.event.update({ where: { id: event.id }, data: { currentPhase: 'INBOUND' } });
+    await writeAudit(req, 'Event', event.id, 'UPDATE', { startReturn: true });
+    const full = await loadEvent(event.id);
+    res.json({
+      ok: true,
+      message: 'Fase de devolución iniciada. Escanea los equipos que retornan.',
+      event: mapEventResponse(full, await locationNames()),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 /** Compat: confirm-inbound → envía regreso a movimientos */
 router.post('/:id/confirm-inbound', requirePermission('events.manage'), async (req: AuthRequest, res, next) => {
   try {

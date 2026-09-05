@@ -143,6 +143,7 @@ export default function EventDetailPage() {
   const [lastAdded, setLastAdded] = useState<AddScanResult | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [activating, setActivating] = useState(false);
+  const [startingReturn, setStartingReturn] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'done'>('all');
   const [activeListId, setActiveListId] = useState<string | null>(null);
   const [createListOpen, setCreateListOpen] = useState(false);
@@ -225,7 +226,13 @@ export default function EventDetailPage() {
     }
     if (result.success && result.code === 'OK') {
       toast.success(
-        result.device ? `Equipo verificado: ${deviceEventLabel(result.device)}` : 'Equipo verificado',
+        result.device
+          ? phase === 'INBOUND'
+            ? `Retorno verificado: ${deviceEventLabel(result.device)}`
+            : `Equipo verificado: ${deviceEventLabel(result.device)}`
+          : phase === 'INBOUND'
+            ? 'Retorno verificado'
+            : 'Equipo verificado',
         { id: toastId, duration: 1800 }
       );
       return;
@@ -334,6 +341,31 @@ export default function EventDetailPage() {
       toast.error(msg);
     } finally {
       setActivating(false);
+    }
+  };
+
+  const handleStartReturn = async () => {
+    if (!id) return;
+    if (
+      !confirm(
+        '¿Iniciar la fase de devolución?\n\nPodrás escanear cada equipo de la lista para confirmar que retorna, ver el avance y luego enviar el regreso a Movimientos.'
+      )
+    ) {
+      return;
+    }
+    setStartingReturn(true);
+    try {
+      const { data } = await api.post<{ message?: string }>(`/api/events/${id}/start-return`);
+      await queryClient.invalidateQueries({ queryKey: ['event', id] });
+      await queryClient.invalidateQueries({ queryKey: ['events'] });
+      setScanning(true);
+      setFilter('pending');
+      toast.success(data.message || 'Fase de devolución iniciada');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error';
+      toast.error(msg);
+    } finally {
+      setStartingReturn(false);
     }
   };
 
@@ -528,6 +560,19 @@ export default function EventDetailPage() {
             {event.toLocationIsTemporary && <span className="text-primary/80"> (lugar temporal)</span>}
             <span className="text-muted/70"> · origen ref. {fromLabel}</span>
           </p>
+          {isActive && (
+            <div
+              className={cn(
+                'mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium',
+                phase === 'OUTBOUND'
+                  ? 'bg-primary/15 text-primary border border-primary/30'
+                  : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+              )}
+            >
+              {phase === 'OUTBOUND' ? <Truck className="h-4 w-4" /> : <Home className="h-4 w-4" />}
+              {phase === 'OUTBOUND' ? 'Estado: salida (checklist previo)' : 'Estado: devolución / regreso'}
+            </div>
+          )}
         </div>
       </div>
 
@@ -587,8 +632,9 @@ export default function EventDetailPage() {
           )}
         </div>
         <p className="text-xs text-muted">
-          Organiza equipos por categoría o listas personalizadas (micrófonos, parlantes, etc.). Pueden venir de distintos
-          lugares; al verificar se registra su origen real.
+          {phase === 'INBOUND'
+            ? 'Elige la lista y escanea cada equipo para confirmar su devolución. El avance se actualiza al vuelo.'
+            : 'Organiza equipos por categoría o listas personalizadas. Al verificar en salida se registra su origen real.'}
         </p>
 
         {createListOpen && canManage && (
@@ -655,23 +701,41 @@ export default function EventDetailPage() {
         )}
 
         <div className="flex gap-2 flex-wrap">
-          {event.lists.map((list) => (
-            <button
-              key={list.id}
-              type="button"
-              onClick={() => setActiveListId(list.id)}
-              className={cn(
-                'px-3 py-2 rounded-lg border text-sm text-left min-w-[140px]',
-                activeListId === list.id ? 'border-primary bg-primary/10' : 'border-border hover:bg-card-hover'
-              )}
-            >
-              <span className="font-medium block truncate">{list.name}</span>
-              <span className="text-xs text-muted">
-                {list.stats.total} equipo{list.stats.total !== 1 ? 's' : ''}
-                {list.kind === 'CATEGORY' ? ' · categoría' : ''}
-              </span>
-            </button>
-          ))}
+          {event.lists.map((list) => {
+            const listDone = phase === 'OUTBOUND' ? list.stats.outboundDone : list.stats.inboundDone;
+            const listTotal = list.stats.total;
+            const listPct = listTotal ? Math.round((listDone / listTotal) * 100) : 0;
+            return (
+              <button
+                key={list.id}
+                type="button"
+                onClick={() => setActiveListId(list.id)}
+                className={cn(
+                  'px-3 py-2 rounded-lg border text-sm text-left min-w-[160px]',
+                  activeListId === list.id ? 'border-primary bg-primary/10' : 'border-border hover:bg-card-hover'
+                )}
+              >
+                <span className="font-medium block truncate">{list.name}</span>
+                <span className="text-xs text-muted block">
+                  {listTotal} equipo{listTotal !== 1 ? 's' : ''}
+                  {list.kind === 'CATEGORY' ? ' · categoría' : ''}
+                </span>
+                {isActive && listTotal > 0 && (
+                  <>
+                    <span className="text-xs text-foreground/80 mt-1 block">
+                      {phase === 'OUTBOUND' ? 'Salida' : 'Devolución'}: {listDone}/{listTotal} ({listPct}%)
+                    </span>
+                    <span className="mt-1 block h-1.5 rounded-full bg-card-hover overflow-hidden">
+                      <span
+                        className={cn('block h-full rounded-full', listPct === 100 ? 'bg-green-500' : 'bg-primary')}
+                        style={{ width: `${listPct}%` }}
+                      />
+                    </span>
+                  </>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {activeList && canManage && event.status !== 'COMPLETED' && (
@@ -760,14 +824,21 @@ export default function EventDetailPage() {
               </span>
             ) : (
               <span className="flex items-center gap-2">
-                <Home className="h-4 w-4 text-primary" /> Checklist de regreso
+                <Home className="h-4 w-4 text-emerald-400" /> Checklist de devolución
               </span>
             )}
           </span>
           <span className="text-sm text-muted">
-            {progress} / {event.stats.total} verificados ({progressPct}%)
+            {progress} / {event.stats.total}{' '}
+            {phase === 'INBOUND' ? 'retornados' : 'verificados'} ({progressPct}%)
           </span>
         </div>
+        {isActive && activeList && (
+          <p className="text-xs text-muted">
+            Lista activa “{activeList.name}”: {listProgress}/{activeList.stats.total}{' '}
+            {phase === 'INBOUND' ? 'confirmados en devolución' : 'listos en salida'}
+          </p>
+        )}
         <div className="h-3 bg-card-hover rounded-full overflow-hidden">
           <div
             className={cn('h-full rounded-full transition-all duration-500', progressPct === 100 ? 'bg-green-500' : 'bg-primary')}
@@ -784,12 +855,18 @@ export default function EventDetailPage() {
                 : `Activar evento (${event.items.length} equipos · ${event.lists.length} listas)`}
           </Button>
         )}
+        {isActive && canManage && phase === 'OUTBOUND' && (event.stats.outboundSent ?? 0) >= event.stats.total && event.stats.total > 0 && (
+          <Button className="w-full min-h-touch" variant="outline" onClick={handleStartReturn} disabled={startingReturn}>
+            <Home className="h-4 w-4 mr-2" />
+            {startingReturn ? 'Iniciando…' : 'Iniciar devolución (checklist de regreso)'}
+          </Button>
+        )}
         {isActive && canManage && (
           <div className="flex flex-col sm:flex-row gap-2">
             {listReady && (
               <Button className="flex-1 min-h-touch" variant="outline" onClick={() => handleSendToMovements(true)} disabled={confirming}>
                 <Send className="h-4 w-4 mr-2" />
-                Enviar lista a Movimientos
+                {phase === 'INBOUND' ? 'Enviar lista (devolución) a Movimientos' : 'Enviar lista a Movimientos'}
               </Button>
             )}
             {allReady && (
@@ -799,7 +876,7 @@ export default function EventDetailPage() {
                   ? 'Enviando...'
                   : phase === 'OUTBOUND'
                     ? 'Enviar todo a Movimientos (autorizar salida)'
-                    : 'Enviar regreso a Movimientos'}
+                    : 'Enviar devolución completa a Movimientos'}
               </Button>
             )}
           </div>
@@ -812,6 +889,7 @@ export default function EventDetailPage() {
               Movimientos
             </Link>
             .
+            {phase === 'OUTBOUND' ? ' Cuando se autoricen, podrás iniciar la devolución.' : ''}
           </p>
         ) : null}
         {event.status === 'COMPLETED' && (
@@ -825,7 +903,9 @@ export default function EventDetailPage() {
         <div className="grid md:grid-cols-2 gap-4">
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h2 className="font-semibold">Escanear código de barras</h2>
+              <h2 className="font-semibold">
+                {phase === 'INBOUND' ? 'Escanear devolución' : 'Escanear código de barras'}
+              </h2>
               <Button variant="ghost" size="sm" onClick={() => setScanning((s) => !s)}>
                 {scanning ? 'Pausar' : 'Reanudar'}
               </Button>
@@ -836,15 +916,20 @@ export default function EventDetailPage() {
               onScan={handleScan}
               sameCodeCooldownMs={1100}
               betweenCodesMs={150}
+              hint={
+                phase === 'INBOUND'
+                  ? 'Ubica el código del equipo que retorna dentro de la zona de escáner'
+                  : 'Por favor ubica el código de barras del producto dentro de la zona de escáner'
+              }
             />
             <p className="text-xs text-muted mt-2 text-center">
               {phase === 'OUTBOUND'
-                ? 'Salida: verifica cada equipo de cualquier lista. Se guarda su ubicación actual como origen.'
-                : `Regreso: el equipo debe figurar en inventario en "${toLabel}".`}
+                ? 'Salida: verifica cada equipo de la lista seleccionada. Se guarda su ubicación actual como origen.'
+                : `Devolución: confirma cada equipo que regresa. Debe figurar en inventario en “${toLabel}”.`}
             </p>
           </div>
           <div className="space-y-3">
-            <h2 className="font-semibold">Último escaneo</h2>
+            <h2 className="font-semibold">{phase === 'INBOUND' ? 'Última devolución escaneada' : 'Último escaneo'}</h2>
             <AnimatePresence mode="wait">
               {lastScan ? (
                 <motion.div
@@ -878,9 +963,13 @@ export default function EventDetailPage() {
                     )}
                   >
                     {lastScan.code === 'ALREADY_SCANNED'
-                      ? 'Ya fue verificado'
+                      ? phase === 'INBOUND'
+                        ? 'Ya confirmado en devolución'
+                        : 'Ya fue verificado'
                       : lastScan.success && lastScan.code === 'OK'
-                        ? 'Equipo verificado'
+                        ? phase === 'INBOUND'
+                          ? 'Devolución confirmada'
+                          : 'Equipo verificado'
                         : lastScan.success
                           ? 'Listo'
                           : 'No verificado'}
@@ -908,11 +997,24 @@ export default function EventDetailPage() {
         <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
           <h2 className="font-semibold">
             {activeList?.name ?? 'Equipos'} ({listItems.length})
+            {isActive && (
+              <span className="font-normal text-muted text-sm ml-2">
+                · {listProgress} {phase === 'INBOUND' ? 'retornados' : 'verificados'}
+              </span>
+            )}
           </h2>
           <div className="flex gap-2 flex-wrap">
             {(['all', 'pending', 'done'] as const).map((f) => (
               <Button key={f} variant={filter === f ? 'default' : 'outline'} size="sm" onClick={() => setFilter(f)}>
-                {f === 'all' ? 'Todos' : f === 'pending' ? 'Pendientes' : 'Verificados'}
+                {f === 'all'
+                  ? 'Todos'
+                  : f === 'pending'
+                    ? phase === 'INBOUND'
+                      ? 'Pendientes de retorno'
+                      : 'Pendientes'
+                    : phase === 'INBOUND'
+                      ? 'Retornados'
+                      : 'Verificados'}
               </Button>
             ))}
             {canManage && isDraft && (
@@ -964,8 +1066,18 @@ export default function EventDetailPage() {
                     Ubicación: {locationLabel(item.device.location)}
                     {item.originLocation ? ` · origen verificado: ${locationLabel(item.originLocation)}` : ''}
                   </p>
-                  {done && doneUser && <p className="text-xs text-green-400/80 mt-0.5">Verificado por {doneUser}</p>}
-                  {sent && <p className="text-xs text-amber-400 mt-0.5">Enviado a Movimientos (pendiente autorización)</p>}
+                  {done && doneUser && (
+                    <p className="text-xs text-green-400/80 mt-0.5">
+                      {phase === 'INBOUND' ? 'Devolución confirmada por' : 'Verificado por'} {doneUser}
+                    </p>
+                  )}
+                  {sent && (
+                    <p className="text-xs text-amber-400 mt-0.5">
+                      {phase === 'INBOUND'
+                        ? 'Devolución enviada a Movimientos (pendiente autorización)'
+                        : 'Enviado a Movimientos (pendiente autorización)'}
+                    </p>
+                  )}
                 </div>
                 {canManage && (isDraft || item.device.location === event.toLocation) && (
                   <Button

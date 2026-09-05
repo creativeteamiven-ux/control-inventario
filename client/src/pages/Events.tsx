@@ -206,8 +206,15 @@ export default function Events() {
                     {STATUS_LABEL[e.status]}
                   </span>
                   {e.status === 'ACTIVE' && (
-                    <span className="text-xs text-muted">
-                      {e.currentPhase === 'OUTBOUND' ? 'Fase: salida' : 'Fase: regreso'}
+                    <span
+                      className={cn(
+                        'text-xs font-medium px-2 py-0.5 rounded-full',
+                        e.currentPhase === 'OUTBOUND'
+                          ? 'bg-primary/15 text-primary'
+                          : 'bg-emerald-500/15 text-emerald-300'
+                      )}
+                    >
+                      {e.currentPhase === 'OUTBOUND' ? 'Salida' : 'Devolución'}
                     </span>
                   )}
                 </div>
