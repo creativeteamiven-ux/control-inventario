@@ -5,6 +5,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { assertLocationCode, isTemporaryLocation } from '../lib/locations.js';
+import { assertApprovalToken } from '../lib/approvalToken.js';
 import { prisma } from '../lib/prisma.js';
 
 const router = Router();
@@ -130,9 +131,10 @@ router.get('/pending', requirePermission('movements.view'), async (_req, res, ne
 /** Aprobar varios pendientes a la vez */
 router.post('/approve-batch', requirePermission('movements.create'), async (req: AuthRequest, res, next) => {
   try {
-    const { ids } = req.body as { ids?: string[] };
+    const { ids, approvalToken } = req.body as { ids?: string[]; approvalToken?: string };
     if (!ids?.length) throw new AppError(400, 'Indica los movimientos a aprobar');
     const userId = req.user!.userId;
+    const method = assertApprovalToken(approvalToken, userId);
     let approved = 0;
     const eventIds = new Set<string>();
     for (const id of ids) {
@@ -152,7 +154,7 @@ router.post('/approve-batch', requirePermission('movements.create'), async (req:
       approved++;
       await maybeAdvanceEvent(existing.eventId, existing.type);
     }
-    await writeAudit(req, 'Movement', 'batch', 'UPDATE', { approved, eventIds: [...eventIds] });
+    await writeAudit(req, 'Movement', 'batch', 'UPDATE', { approved, eventIds: [...eventIds], authMethod: method });
     res.json({ ok: true, approved });
   } catch (e) {
     next(e);
@@ -168,6 +170,7 @@ router.post('/:id/approve', requirePermission('movements.create'), async (req: A
     if (!existing.toLocation) throw new AppError(400, 'El movimiento no tiene destino');
 
     const userId = req.user!.userId;
+    const method = assertApprovalToken((req.body as { approvalToken?: string })?.approvalToken, userId);
     await prisma.$transaction([
       prisma.movement.update({
         where: { id: existing.id },
@@ -179,7 +182,7 @@ router.post('/:id/approve', requirePermission('movements.create'), async (req: A
       }),
     ]);
     await maybeAdvanceEvent(existing.eventId, existing.type);
-    await writeAudit(req, 'Movement', existing.id, 'UPDATE', { approved: true });
+    await writeAudit(req, 'Movement', existing.id, 'UPDATE', { approved: true, authMethod: method });
     res.json({ ok: true });
   } catch (e) {
     next(e);

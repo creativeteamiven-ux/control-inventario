@@ -23,6 +23,7 @@ const Audit = lazyWithRetry(() => import('@/pages/Audit'));
 const Trash = lazyWithRetry(() => import('@/pages/Trash'));
 const Events = lazyWithRetry(() => import('@/pages/Events'));
 const EventDetail = lazyWithRetry(() => import('@/pages/EventDetail'));
+const Security = lazyWithRetry(() => import('@/pages/Security'));
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -199,6 +200,7 @@ function AppRoutes() {
             </AdminRoute>
           }
         />
+        <Route path="security" element={<Security />} />
         <Route
           path="audit"
           element={

@@ -31,16 +31,26 @@ interface BarcodeScannerProps {
   active: boolean;
   onScan: (code: string) => void | Promise<void>;
   className?: string;
+  /** Evita reenviar el mismo código durante este tiempo (ms). Default 1500. */
+  sameCodeCooldownMs?: number;
 }
 
-export default function BarcodeScanner({ readerId, active, onScan, className }: BarcodeScannerProps) {
+export default function BarcodeScanner({
+  readerId,
+  active,
+  onScan,
+  className,
+  sameCodeCooldownMs = 1500,
+}: BarcodeScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isStartingRef = useRef(false);
   const lastScanRef = useRef<{ code: string; at: number } | null>(null);
   const onScanRef = useRef(onScan);
+  const cooldownRef = useRef(sameCodeCooldownMs);
   const camerasRef = useRef<{ id: string; label: string }[]>([]);
   const selectedCameraIdRef = useRef<string | null>(null);
   onScanRef.current = onScan;
+  cooldownRef.current = sameCodeCooldownMs;
 
   const [scanning, setScanning] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -130,7 +140,8 @@ export default function BarcodeScanner({ readerId, active, onScan, className }: 
             if (!code) return;
             const now = Date.now();
             const prev = lastScanRef.current;
-            if (prev && prev.code === code && now - prev.at < 1500) return;
+            const cooldown = cooldownRef.current;
+            if (prev && prev.code === code && now - prev.at < cooldown) return;
             lastScanRef.current = { code, at: now };
             void onScanRef.current(code);
           },

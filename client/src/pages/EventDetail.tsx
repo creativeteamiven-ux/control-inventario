@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -148,6 +148,8 @@ export default function EventDetailPage() {
   const [creatingList, setCreatingList] = useState(false);
   const [renamingListId, setRenamingListId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const scanBusyRef = useRef(false);
+  const eventItemsRef = useRef<EventItem[]>([]);
 
   const { data: event, isLoading } = useQuery({
     queryKey: ['event', id],
@@ -176,10 +178,50 @@ export default function EventDetailPage() {
     }
   }, [event?.lists, activeListId]);
 
+  eventItemsRef.current = event?.items ?? [];
+
   const phase = event?.currentPhase ?? 'OUTBOUND';
   const isActive = event?.status === 'ACTIVE';
   const isDraft = event?.status === 'DRAFT';
   const activeList = event?.lists?.find((l) => l.id === activeListId) ?? event?.lists?.[0];
+
+  const announceScan = (result: ScanResult) => {
+    setLastScan(result);
+    const toastId = `event-scan-${result.device?.id || result.code}-${result.code}`;
+
+    if (result.code === 'ALREADY_SCANNED') {
+      toast(result.message || 'Este equipo ya fue verificado', {
+        id: toastId,
+        icon: 'ℹ️',
+        duration: 2800,
+      });
+      return;
+    }
+    if (result.success && result.code === 'OK') {
+      toast.success(
+        result.device ? `Equipo verificado: ${result.device.internalCode}` : 'Equipo verificado',
+        { id: toastId, duration: 2800 }
+      );
+      return;
+    }
+    if (result.success) {
+      toast.success(result.message, { id: toastId, duration: 2800 });
+      return;
+    }
+    toast.error(result.message, { id: toastId, duration: 3500 });
+  };
+
+  const matchItemByCode = (raw: string) => {
+    const code = raw.trim().toLowerCase();
+    if (!code) return null;
+    return (
+      eventItemsRef.current.find((i) => {
+        const ic = i.device.internalCode?.toLowerCase();
+        const sn = i.device.serialNumber?.toLowerCase();
+        return i.device.id === raw.trim() || ic === code || (sn && sn === code);
+      }) ?? null
+    );
+  };
 
   const handleDraftAddScan = useCallback(
     async (code: string) => {
@@ -207,25 +249,48 @@ export default function EventDetailPage() {
 
   const handleScan = useCallback(
     async (code: string) => {
-      if (!id || !canScan || !isActive) return;
+      if (!id || !canScan || !isActive || scanBusyRef.current) return;
+
+      // Si ya está verificado en esta sesión/lista, avisar sin saturar la API
+      const local = matchItemByCode(code);
+      if (local) {
+        const already =
+          phase === 'OUTBOUND' ? !!local.outboundScannedAt : !!local.inboundScannedAt;
+        if (already) {
+          announceScan({
+            success: true,
+            code: 'ALREADY_SCANNED',
+            message: 'Este equipo ya fue verificado',
+            device: {
+              id: local.device.id,
+              name: local.device.name,
+              internalCode: local.device.internalCode,
+            },
+          });
+          return;
+        }
+      }
+
+      scanBusyRef.current = true;
       try {
         const { data } = await api.post<ScanResult>(`/api/events/${id}/scan`, { code, phase });
-        setLastScan(data);
-        if (data.success) {
-          toast.success(data.message, { duration: 2000 });
+        announceScan(data);
+        if (data.success && data.code === 'OK') {
           await queryClient.invalidateQueries({ queryKey: ['event', id] });
           await queryClient.invalidateQueries({ queryKey: ['events'] });
-        } else {
-          toast.error(data.message, { duration: 3500 });
         }
       } catch (err: unknown) {
         const res = (err as { response?: { data?: ScanResult } })?.response?.data;
         if (res) {
-          setLastScan(res);
-          toast.error(res.message, { duration: 3500 });
+          announceScan(res);
         } else {
           toast.error('Error al escanear');
         }
+      } finally {
+        // Pequeña pausa para que no dispare otra lectura inmediata
+        setTimeout(() => {
+          scanBusyRef.current = false;
+        }, 600);
       }
     },
     [id, canScan, isActive, phase, queryClient]
@@ -653,7 +718,12 @@ export default function EventDetailPage() {
                 {scanning ? 'Pausar' : 'Reanudar'}
               </Button>
             </div>
-            <BarcodeScanner readerId={`event-scanner-${id}`} active={scanning} onScan={handleScan} />
+            <BarcodeScanner
+              readerId={`event-scanner-${id}`}
+              active={scanning}
+              onScan={handleScan}
+              sameCodeCooldownMs={4000}
+            />
             <p className="text-xs text-muted mt-2 text-center">
               {phase === 'OUTBOUND'
                 ? 'Salida: verifica cada equipo de cualquier lista. Se guarda su ubicación actual como origen.'
@@ -665,22 +735,46 @@ export default function EventDetailPage() {
             <AnimatePresence mode="wait">
               {lastScan ? (
                 <motion.div
-                  key={lastScan.message}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  key={`${lastScan.code}-${lastScan.device?.id ?? ''}-${lastScan.message}`}
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
                   className={cn(
                     'rounded-xl border p-4',
-                    lastScan.success ? 'border-green-500/40 bg-green-500/10' : 'border-red-500/40 bg-red-500/10'
+                    lastScan.code === 'ALREADY_SCANNED'
+                      ? 'border-amber-500/40 bg-amber-500/10'
+                      : lastScan.success
+                        ? 'border-green-500/40 bg-green-500/10'
+                        : 'border-red-500/40 bg-red-500/10'
                   )}
                 >
-                  {lastScan.success ? (
+                  {lastScan.code === 'ALREADY_SCANNED' ? (
+                    <AlertTriangle className="h-8 w-8 text-amber-400 mb-2" />
+                  ) : lastScan.success ? (
                     <CheckCircle2 className="h-8 w-8 text-green-400 mb-2" />
                   ) : (
                     <XCircle className="h-8 w-8 text-red-400 mb-2" />
                   )}
-                  <p className="font-medium">{lastScan.message}</p>
+                  <p
+                    className={cn(
+                      'font-display text-lg font-semibold',
+                      lastScan.code === 'ALREADY_SCANNED'
+                        ? 'text-amber-300'
+                        : lastScan.success
+                          ? 'text-green-300'
+                          : 'text-red-300'
+                    )}
+                  >
+                    {lastScan.code === 'ALREADY_SCANNED'
+                      ? 'Ya fue verificado'
+                      : lastScan.success && lastScan.code === 'OK'
+                        ? 'Equipo verificado'
+                        : lastScan.success
+                          ? 'Listo'
+                          : 'No verificado'}
+                  </p>
+                  <p className="text-sm mt-1 text-foreground/90">{lastScan.message}</p>
                   {lastScan.device && (
-                    <p className="text-sm text-muted mt-1">
+                    <p className="text-sm text-muted mt-2">
                       {lastScan.device.name} · <span className="font-mono">{lastScan.device.internalCode}</span>
                     </p>
                   )}

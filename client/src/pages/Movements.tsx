@@ -9,6 +9,7 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import TransferCart, { type CartDevice } from '@/components/TransferCart';
 import DevicePickerModal from '@/components/DevicePickerModal';
+import AuthorizeModal from '@/components/AuthorizeModal';
 import { getStoredCart, clearStoredCart, setStoredCart } from '@/lib/transferCart';
 import { Input } from '@/components/ui/input';
 import { useLocations } from '@/hooks/useLocations';
@@ -190,19 +191,13 @@ export default function Movements() {
   });
 
   const [approving, setApproving] = useState(false);
+  const [authModal, setAuthModal] = useState<null | { mode: 'one'; id: string } | { mode: 'batch' }>(null);
 
-  const approveOne = async (movementId: string) => {
-    try {
-      await api.post(`/api/movements/${movementId}/approve`);
-      queryClient.invalidateQueries({ queryKey: ['movements-pending'] });
-      queryClient.invalidateQueries({ queryKey: ['movements'] });
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
-      queryClient.invalidateQueries({ queryKey: ['events'] });
-      toast.success('Traslado autorizado');
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error';
-      toast.error(msg);
-    }
+  const invalidateAfterApprove = () => {
+    queryClient.invalidateQueries({ queryKey: ['movements-pending'] });
+    queryClient.invalidateQueries({ queryKey: ['movements'] });
+    queryClient.invalidateQueries({ queryKey: ['devices'] });
+    queryClient.invalidateQueries({ queryKey: ['events'] });
   };
 
   const rejectOne = async (movementId: string) => {
@@ -218,21 +213,28 @@ export default function Movements() {
     }
   };
 
-  const approveAllPending = async () => {
-    const ids = pendingData?.items?.map((i) => i.id) ?? [];
-    if (!ids.length) return;
-    if (!confirm(`¿Autorizar ${ids.length} traslado(s)? Se actualizará la ubicación de los equipos.`)) return;
+  const openApproveOne = (movementId: string) => setAuthModal({ mode: 'one', id: movementId });
+  const openApproveAll = () => {
+    if (!(pendingData?.items?.length ?? 0)) return;
+    setAuthModal({ mode: 'batch' });
+  };
+
+  const handleAuthorized = async (approvalToken: string) => {
+    if (!authModal) return;
     setApproving(true);
     try {
-      const { data: res } = await api.post<{ approved: number }>('/api/movements/approve-batch', { ids });
-      queryClient.invalidateQueries({ queryKey: ['movements-pending'] });
-      queryClient.invalidateQueries({ queryKey: ['movements'] });
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
-      queryClient.invalidateQueries({ queryKey: ['events'] });
-      toast.success(`${res.approved} traslado(s) autorizado(s)`);
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error';
-      toast.error(msg);
+      if (authModal.mode === 'one') {
+        await api.post(`/api/movements/${authModal.id}/approve`, { approvalToken });
+        toast.success('Traslado autorizado');
+      } else {
+        const ids = pendingData?.items?.map((i) => i.id) ?? [];
+        const { data: res } = await api.post<{ approved: number }>('/api/movements/approve-batch', {
+          ids,
+          approvalToken,
+        });
+        toast.success(`${res.approved} traslado(s) autorizado(s)`);
+      }
+      invalidateAfterApprove();
     } finally {
       setApproving(false);
     }
@@ -313,14 +315,15 @@ export default function Movements() {
             ) : null}
           </h2>
           {canManage && (pendingData?.items?.length ?? 0) > 0 && (
-            <Button size="sm" onClick={approveAllPending} disabled={approving}>
+            <Button size="sm" onClick={openApproveAll} disabled={approving}>
               <Check className="h-4 w-4 mr-1" />
               {approving ? 'Autorizando…' : 'Autorizar todos'}
             </Button>
           )}
         </div>
         <p className="text-xs text-muted">
-          Traslados enviados desde Eventos. Al autorizar, se actualiza la ubicación del equipo en inventario.
+          Traslados enviados desde Eventos. Requiere PIN o Face ID / huella (configura en Seguridad). Al autorizar se
+          actualiza la ubicación del equipo.
         </p>
         {pendingLoading ? (
           <p className="text-sm text-muted">Cargando…</p>
@@ -344,7 +347,7 @@ export default function Movements() {
                 </div>
                 {canManage && (
                   <div className="flex flex-col gap-1 shrink-0">
-                    <Button size="sm" onClick={() => approveOne(m.id)}>
+                    <Button size="sm" onClick={() => openApproveOne(m.id)}>
                       Autorizar
                     </Button>
                     <Button size="sm" variant="ghost" className="text-destructive" onClick={() => rejectOne(m.id)}>
@@ -679,6 +682,18 @@ export default function Movements() {
           </div>
         </>
       )}
+
+      <AuthorizeModal
+        open={!!authModal}
+        title={authModal?.mode === 'batch' ? 'Autorizar todos los pendientes' : 'Autorizar traslado'}
+        description={
+          authModal?.mode === 'batch'
+            ? `Confirma con biometría o PIN para autorizar ${pendingData?.items?.length ?? 0} traslado(s).`
+            : 'Confirma con Face ID / huella o con tu PIN para autorizar este traslado.'
+        }
+        onClose={() => !approving && setAuthModal(null)}
+        onAuthorized={handleAuthorized}
+      />
     </motion.div>
   );
 }

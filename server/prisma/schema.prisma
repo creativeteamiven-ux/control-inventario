@@ -77,19 +77,38 @@ enum ExpenseCategory {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  name         String
-  email        String    @unique
-  password     String
-  role         UserRole
-  permissions  Json?     // Array de claves de permiso. Si null/empty se usan los del rol.
-  avatar       String?   @db.Text
-  phone        String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  movements    Movement[]
-  maintenances Maintenance[]
-  loanApprovals LoanRecord[] @relation("ApprovedBy")
+  id                  String               @id @default(cuid())
+  name                String
+  email               String               @unique
+  password            String
+  role                UserRole
+  permissions         Json?                // Array de claves de permiso. Si null/empty se usan los del rol.
+  avatar              String?              @db.Text
+  phone               String?
+  /// PIN de autorización (hash bcrypt) para aprobar traslados.
+  authPinHash         String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  movements           Movement[]
+  maintenances        Maintenance[]
+  loanApprovals       LoanRecord[]         @relation("ApprovedBy")
+  webauthnCredentials WebAuthnCredential[]
+}
+
+/// Credenciales WebAuthn (Face ID / huella del dispositivo) por usuario.
+model WebAuthnCredential {
+  id         String   @id
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicKey  String   @db.Text
+  counter    BigInt   @default(0)
+  deviceType String?  @db.VarChar(64)
+  backedUp   Boolean  @default(false)
+  transports String?  @db.VarChar(255)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model Category {

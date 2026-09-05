@@ -16,6 +16,7 @@ import {
   Users,
   Settings,
   ShieldCheck,
+  Fingerprint,
   Trash2,
   ChevronLeft,
   ChevronRight,
@@ -42,6 +43,7 @@ const navItems: { to: string; icon: typeof LayoutDashboard; label: string; perm?
   { to: '/budgets', icon: PiggyBank, label: 'Presupuestos', perm: 'finance.view' },
   { to: '/audit', icon: ShieldCheck, label: 'Auditoría', roles: ['ADMIN', 'MANAGER'] },
   { to: '/users', icon: Users, label: 'Usuarios', perm: 'users.view' },
+  { to: '/security', icon: Fingerprint, label: 'Seguridad' },
   { to: '/settings', icon: Settings, label: 'Configuración', roles: ['ADMIN'] },
 ];
 

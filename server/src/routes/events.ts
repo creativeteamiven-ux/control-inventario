@@ -562,7 +562,7 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
         return res.json({
           success: true,
           code: 'ALREADY_SCANNED',
-          message: 'Este equipo ya fue verificado en la salida',
+          message: 'Este equipo ya fue verificado',
           device: { id: device.id, name: device.name, internalCode: device.internalCode },
           item,
         });
@@ -595,7 +595,7 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
       return res.json({
         success: true,
         code: 'OK',
-        message: 'Equipo verificado — listo para solicitar traslado',
+        message: 'Equipo verificado',
         device: { id: device.id, name: device.name, internalCode: device.internalCode },
         item: updated[0],
         stats: fresh ? eventStats(fresh.items) : undefined,
@@ -638,7 +638,7 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
       return res.json({
         success: true,
         code: 'ALREADY_SCANNED',
-        message: 'Este equipo ya fue verificado en el regreso',
+        message: 'Este equipo ya fue verificado',
         device: { id: device.id, name: device.name, internalCode: device.internalCode },
         item,
       });
@@ -666,7 +666,7 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
     return res.json({
       success: true,
       code: 'OK',
-      message: 'Equipo verificado — listo para solicitar regreso',
+      message: 'Equipo verificado',
       device: { id: device.id, name: device.name, internalCode: device.internalCode },
       item: updated[0],
       stats: fresh ? eventStats(fresh.items) : undefined,

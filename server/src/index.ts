@@ -30,10 +30,12 @@ import budgetsRouter from './routes/budgets.js';
 import alertsRouter from './routes/alerts.js';
 import auditRouter from './routes/audit.js';
 import eventsRouter from './routes/events.js';
+import securityRouter from './routes/security.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { startAlertScheduler } from './lib/scheduler.js';
 import { ensureEventTables } from './lib/ensureEventTables.js';
 import { ensureSchemaCompat } from './lib/ensureSchemaCompat.js';
+import { ensureAuthSecurity } from './lib/ensureAuthSecurity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // En Vercel (Root Directory = server) no hay carpeta padre; cargar .env desde el mismo directorio que index.js
@@ -191,6 +193,7 @@ app.use('/api/budgets', budgetsRouter);
 app.use('/api/alerts', alertsRouter);
 app.use('/api/audit', auditRouter);
 app.use('/api/events', eventsRouter);
+app.use('/api/security', securityRouter);
 
 // Archivos estáticos (uploads)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -212,6 +215,7 @@ async function bootDb() {
     console.log('[DB] Verificando schema y tablas de eventos...');
     await ensureSchemaCompat(prisma);
     await ensureEventTables(prisma);
+    await ensureAuthSecurity(prisma);
     console.log('[DB] Schema y tablas de eventos OK');
   } catch (err) {
     console.error('[DB] Error en boot DB:', (err as Error).message);
