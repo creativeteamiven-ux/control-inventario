@@ -66,7 +66,7 @@ export default function SearchPalette({ open, onOpenChange }: SearchPaletteProps
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-[12vh] bg-black/50" onClick={() => onOpenChange(false)}>
+    <div className="fixed inset-0 z-[60] flex items-start justify-center p-3 sm:p-4 pt-[max(8vh,env(safe-area-inset-top))] bg-black/50" onClick={() => onOpenChange(false)}>
       <div className="w-full max-w-xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3 px-4 border-b border-border">
           <Search className="h-5 w-5 text-muted shrink-0" />
@@ -79,8 +79,15 @@ export default function SearchPalette({ open, onOpenChange }: SearchPaletteProps
             className="flex-1 h-14 bg-transparent text-base outline-none placeholder:text-muted"
           />
           {isFetching && <Loader2 className="h-4 w-4 animate-spin text-muted" />}
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="sm:hidden min-h-touch min-w-touch flex items-center justify-center text-sm text-muted hover:text-foreground"
+          >
+            Cerrar
+          </button>
         </div>
-        <div className="max-h-[50vh] overflow-y-auto">
+        <div className="max-h-[min(55dvh,420px)] overflow-y-auto">
           {debounced.length < 2 ? (
             <p className="p-6 text-center text-sm text-muted">Escribe al menos 2 caracteres para buscar.</p>
           ) : results.length === 0 && !isFetching ? (
@@ -93,7 +100,7 @@ export default function SearchPalette({ open, onOpenChange }: SearchPaletteProps
                 onMouseEnter={() => setActiveIndex(i)}
                 onClick={() => go(d.id)}
                 className={cn(
-                  'w-full text-left flex items-center gap-3 px-4 py-3 border-b border-border last:border-0',
+                  'w-full text-left flex items-center gap-3 px-4 py-3.5 border-b border-border last:border-0 min-h-touch',
                   i === activeIndex ? 'bg-card-hover' : 'hover:bg-card-hover'
                 )}
               >
@@ -102,12 +109,12 @@ export default function SearchPalette({ open, onOpenChange }: SearchPaletteProps
                   <p className="text-sm font-medium text-foreground truncate">{d.name}</p>
                   <p className="text-xs text-muted truncate">{d.internalCode} · {d.brand}{d.serialNumber ? ` · ${d.serialNumber}` : ''}</p>
                 </div>
-                {i === activeIndex && <CornerDownLeft className="h-4 w-4 text-muted shrink-0" />}
+                {i === activeIndex && <CornerDownLeft className="hidden sm:block h-4 w-4 text-muted shrink-0" />}
               </button>
             ))
           )}
         </div>
-        <div className="px-4 py-2 border-t border-border text-xs text-muted flex items-center gap-4">
+        <div className="hidden sm:flex px-4 py-2 border-t border-border text-xs text-muted items-center gap-4">
           <span>↑↓ navegar</span><span>↵ abrir</span><span>Esc cerrar</span>
         </div>
       </div>

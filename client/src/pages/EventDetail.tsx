@@ -547,7 +547,7 @@ export default function EventDetailPage() {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 max-w-4xl mx-auto">
       <div className="flex items-start gap-3">
-        <Link to="/events" className="p-2 rounded-lg hover:bg-card-hover text-muted mt-1">
+        <Link to="/events" className="p-2 rounded-lg hover:bg-card-hover text-muted mt-0.5 min-h-touch min-w-touch flex items-center justify-center shrink-0">
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <div className="flex-1 min-w-0">
@@ -700,7 +700,7 @@ export default function EventDetailPage() {
           </div>
         )}
 
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 snap-x snap-mandatory">
           {event.lists.map((list) => {
             const listDone = phase === 'OUTBOUND' ? list.stats.outboundDone : list.stats.inboundDone;
             const listTotal = list.stats.total;
@@ -711,7 +711,7 @@ export default function EventDetailPage() {
                 type="button"
                 onClick={() => setActiveListId(list.id)}
                 className={cn(
-                  'px-3 py-2 rounded-lg border text-sm text-left min-w-[160px]',
+                  'px-3 py-2.5 rounded-lg border text-sm text-left min-w-[9.5rem] shrink-0 snap-start min-h-touch sm:min-h-0',
                   activeListId === list.id ? 'border-primary bg-primary/10' : 'border-border hover:bg-card-hover'
                 )}
               >
@@ -851,14 +851,26 @@ export default function EventDetailPage() {
             {activating
               ? 'Activando...'
               : event.items.length === 0
-                ? 'Agrega equipos a una lista antes de activar'
-                : `Activar evento (${event.items.length} equipos · ${event.lists.length} listas)`}
+                ? 'Agrega equipos antes de activar'
+                : (
+                  <>
+                    <span className="sm:hidden">Activar ({event.items.length})</span>
+                    <span className="hidden sm:inline">
+                      Activar evento ({event.items.length} equipos · {event.lists.length} listas)
+                    </span>
+                  </>
+                )}
           </Button>
         )}
         {isActive && canManage && phase === 'OUTBOUND' && (event.stats.outboundSent ?? 0) >= event.stats.total && event.stats.total > 0 && (
           <Button className="w-full min-h-touch" variant="outline" onClick={handleStartReturn} disabled={startingReturn}>
             <Home className="h-4 w-4 mr-2" />
-            {startingReturn ? 'Iniciando…' : 'Iniciar devolución (checklist de regreso)'}
+            {startingReturn ? 'Iniciando…' : (
+              <>
+                <span className="sm:hidden">Iniciar devolución</span>
+                <span className="hidden sm:inline">Iniciar devolución (checklist de regreso)</span>
+              </>
+            )}
           </Button>
         )}
         {isActive && canManage && (
@@ -866,7 +878,17 @@ export default function EventDetailPage() {
             {listReady && (
               <Button className="flex-1 min-h-touch" variant="outline" onClick={() => handleSendToMovements(true)} disabled={confirming}>
                 <Send className="h-4 w-4 mr-2" />
-                {phase === 'INBOUND' ? 'Enviar lista (devolución) a Movimientos' : 'Enviar lista a Movimientos'}
+                {phase === 'INBOUND' ? (
+                  <>
+                    <span className="sm:hidden">Enviar lista (devo.)</span>
+                    <span className="hidden sm:inline">Enviar lista (devolución) a Movimientos</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="sm:hidden">Enviar lista</span>
+                    <span className="hidden sm:inline">Enviar lista a Movimientos</span>
+                  </>
+                )}
               </Button>
             )}
             {allReady && (
@@ -875,8 +897,18 @@ export default function EventDetailPage() {
                 {confirming
                   ? 'Enviando...'
                   : phase === 'OUTBOUND'
-                    ? 'Enviar todo a Movimientos (autorizar salida)'
-                    : 'Enviar devolución completa a Movimientos'}
+                    ? (
+                      <>
+                        <span className="sm:hidden">Enviar todo</span>
+                        <span className="hidden sm:inline">Enviar todo a Movimientos (autorizar salida)</span>
+                      </>
+                    )
+                    : (
+                      <>
+                        <span className="sm:hidden">Enviar devolución</span>
+                        <span className="hidden sm:inline">Enviar devolución completa a Movimientos</span>
+                      </>
+                    )}
               </Button>
             )}
           </div>
@@ -1005,12 +1037,17 @@ export default function EventDetailPage() {
           </h2>
           <div className="flex gap-2 flex-wrap">
             {(['all', 'pending', 'done'] as const).map((f) => (
-              <Button key={f} variant={filter === f ? 'default' : 'outline'} size="sm" onClick={() => setFilter(f)}>
+              <Button key={f} variant={filter === f ? 'default' : 'outline'} size="sm" className="min-h-touch sm:min-h-0" onClick={() => setFilter(f)}>
                 {f === 'all'
                   ? 'Todos'
                   : f === 'pending'
                     ? phase === 'INBOUND'
-                      ? 'Pendientes de retorno'
+                      ? (
+                        <>
+                          <span className="sm:hidden">Pendientes</span>
+                          <span className="hidden sm:inline">Pendientes de retorno</span>
+                        </>
+                      )
                       : 'Pendientes'
                     : phase === 'INBOUND'
                       ? 'Retornados'

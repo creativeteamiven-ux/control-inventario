@@ -293,11 +293,11 @@ export default function DeviceDetail() {
                     className="h-full w-full object-contain cursor-zoom-in"
                     onClick={() => setViewerOpen(true)}
                   />
-                  <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute top-2 right-2 flex gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                     <button
                       type="button"
                       onClick={() => setViewerOpen(true)}
-                      className="rounded-full bg-black/60 p-1.5 text-white hover:bg-black/80"
+                      className="rounded-full bg-black/60 p-2 md:p-1.5 text-white hover:bg-black/80 min-h-touch min-w-touch md:min-h-0 md:min-w-0 flex items-center justify-center"
                       title="Ver en grande"
                       aria-label="Ampliar imagen"
                     >
@@ -308,7 +308,7 @@ export default function DeviceDetail() {
                         type="button"
                         onClick={() => handleDeleteImage(images[mainIndex].id)}
                         disabled={deletingImgId === images[mainIndex]?.id}
-                        className="rounded-full bg-black/60 p-1.5 text-white hover:bg-red-600 disabled:opacity-60"
+                        className="rounded-full bg-black/60 p-2 md:p-1.5 text-white hover:bg-red-600 disabled:opacity-60 min-h-touch min-w-touch md:min-h-0 md:min-w-0 flex items-center justify-center"
                         title="Eliminar esta imagen"
                         aria-label="Eliminar imagen"
                       >
@@ -338,12 +338,12 @@ export default function DeviceDetail() {
                       <span className="absolute bottom-0 inset-x-0 bg-primary/80 text-[9px] text-white text-center leading-tight py-0.5">Principal</span>
                     )}
                     {canEdit && (
-                      <div className="absolute top-0.5 right-0.5 flex gap-0.5 opacity-0 group-hover/thumb:opacity-100 transition-opacity">
+                      <div className="absolute top-0.5 right-0.5 flex gap-0.5 opacity-100 md:opacity-0 md:group-hover/thumb:opacity-100 transition-opacity">
                         {i !== 0 && (
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); handleMakePrimary(img.id); }}
-                            className="rounded-full bg-black/60 p-0.5 text-white hover:bg-primary"
+                            className="rounded-full bg-black/60 p-1 md:p-0.5 text-white hover:bg-primary"
                             title="Marcar como principal"
                             aria-label="Marcar como principal"
                           >
@@ -354,7 +354,7 @@ export default function DeviceDetail() {
                           type="button"
                           onClick={(e) => { e.stopPropagation(); handleDeleteImage(img.id); }}
                           disabled={deletingImgId === img.id}
-                          className="rounded-full bg-black/60 p-0.5 text-white hover:bg-red-600 disabled:opacity-60"
+                          className="rounded-full bg-black/60 p-1 md:p-0.5 text-white hover:bg-red-600 disabled:opacity-60"
                           aria-label="Eliminar imagen"
                         >
                           <X className="h-3 w-3" />

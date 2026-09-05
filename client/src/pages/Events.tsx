@@ -161,18 +161,19 @@ export default function Events() {
           </p>
         </div>
         {canManage && (
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button onClick={() => setCreateOpen(true)} className="min-h-touch sm:min-h-0 shrink-0">
             <Plus className="h-4 w-4 mr-2" /> Nuevo evento
           </Button>
         )}
       </div>
 
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap overflow-x-auto pb-0.5 -mx-1 px-1">
         {['', 'DRAFT', 'ACTIVE', 'COMPLETED'].map((s) => (
           <Button
             key={s || 'all'}
             variant={filter === s ? 'default' : 'outline'}
             size="sm"
+            className="min-h-touch sm:min-h-0 shrink-0"
             onClick={() => setFilter(s)}
           >
             {s ? STATUS_LABEL[s] : 'Todos'}
@@ -195,79 +196,77 @@ export default function Events() {
       ) : (
         <div className="grid gap-3">
           {events.map((e) => (
-            <Link
+            <div
               key={e.id}
-              to={`/events/${e.id}`}
-              className="flex items-center gap-4 p-4 bg-card rounded-xl border border-border hover:border-primary/40 transition-colors group"
+              className="bg-card rounded-xl border border-border hover:border-primary/40 transition-colors group overflow-hidden"
             >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', STATUS_STYLE[e.status])}>
-                    {STATUS_LABEL[e.status]}
-                  </span>
-                  {e.status === 'ACTIVE' && (
-                    <span
-                      className={cn(
-                        'text-xs font-medium px-2 py-0.5 rounded-full',
-                        e.currentPhase === 'OUTBOUND'
-                          ? 'bg-primary/15 text-primary'
-                          : 'bg-emerald-500/15 text-emerald-300'
-                      )}
-                    >
-                      {e.currentPhase === 'OUTBOUND' ? 'Salida' : 'Devolución'}
+              <Link to={`/events/${e.id}`} className="flex items-start gap-3 p-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', STATUS_STYLE[e.status])}>
+                      {STATUS_LABEL[e.status]}
                     </span>
+                    {e.status === 'ACTIVE' && (
+                      <span
+                        className={cn(
+                          'text-xs font-medium px-2 py-0.5 rounded-full',
+                          e.currentPhase === 'OUTBOUND'
+                            ? 'bg-primary/15 text-primary'
+                            : 'bg-emerald-500/15 text-emerald-300'
+                        )}
+                      >
+                        {e.currentPhase === 'OUTBOUND' ? 'Salida' : 'Devolución'}
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="font-semibold text-lg mt-1 truncate">{e.name}</h2>
+                  <p className="text-sm text-muted">
+                    {format(new Date(e.eventDate), "d MMM yyyy, HH:mm", { locale: es })} ·{' '}
+                    {(e.fromLocationLabel ?? locationLabel(e.fromLocation))} →{' '}
+                    {(e.toLocationLabel ?? locationLabel(e.toLocation))}
+                    {e.toLocationIsTemporary && (
+                      <span className="text-primary/80"> (temporal)</span>
+                    )}
+                  </p>
+                  {e.stats.total > 0 && (
+                    <p className="text-xs text-muted mt-1">
+                      {typeof (e as { listCount?: number }).listCount === 'number'
+                        ? `${(e as { listCount?: number }).listCount} lista(s) · `
+                        : ''}
+                      {e.stats.total} equipos · Salida {e.stats.outboundDone}/{e.stats.total} · Regreso{' '}
+                      {e.stats.inboundDone}/{e.stats.total}
+                    </p>
                   )}
                 </div>
-                <h2 className="font-semibold text-lg mt-1 truncate">{e.name}</h2>
-                <p className="text-sm text-muted">
-                  {format(new Date(e.eventDate), "d MMM yyyy, HH:mm", { locale: es })} ·{' '}
-                  {(e.fromLocationLabel ?? locationLabel(e.fromLocation))} →{' '}
-                  {(e.toLocationLabel ?? locationLabel(e.toLocation))}
-                  {e.toLocationIsTemporary && (
-                    <span className="text-primary/80"> (temporal)</span>
+                <ChevronRight className="h-5 w-5 text-muted group-hover:text-primary shrink-0 mt-1 hidden sm:block" />
+              </Link>
+              {(canManage && e.status === 'DRAFT') || (isAdmin && e.status !== 'ACTIVE') ? (
+                <div className="flex gap-2 px-4 pb-4 pt-0 sm:justify-end">
+                  {canManage && e.status === 'DRAFT' && (
+                    <Button variant="outline" size="sm" className="flex-1 sm:flex-none min-h-touch sm:min-h-0" asChild>
+                      <Link
+                        to={`/scan?mode=event&eventId=${e.id}`}
+                        onClick={() => setBuildEventId(e.id)}
+                      >
+                        Escanear
+                      </Link>
+                    </Button>
                   )}
-                </p>
-                {e.stats.total > 0 && (
-                  <p className="text-xs text-muted mt-1">
-                    {typeof (e as { listCount?: number }).listCount === 'number'
-                      ? `${(e as { listCount?: number }).listCount} lista(s) · `
-                      : ''}
-                    {e.stats.total} equipos · Salida {e.stats.outboundDone}/{e.stats.total} · Regreso{' '}
-                    {e.stats.inboundDone}/{e.stats.total}
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {canManage && e.status === 'DRAFT' && (
-                  <Button variant="outline" size="sm" asChild>
-                    <Link
-                      to={`/scan?mode=event&eventId=${e.id}`}
-                      onClick={(ev) => {
-                        ev.stopPropagation();
-                        setBuildEventId(e.id);
-                      }}
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive min-h-touch min-w-touch sm:min-h-0 sm:min-w-0"
+                      title="Eliminar evento (solo admin)"
+                      onClick={() => void handleDelete(e)}
                     >
-                      Escanear
-                    </Link>
-                  </Button>
-                )}
-                {isAdmin && e.status !== 'ACTIVE' && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive"
-                    title="Eliminar evento (solo admin)"
-                    onClick={(ev) => {
-                      ev.preventDefault();
-                      void handleDelete(e);
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-                <ChevronRight className="h-5 w-5 text-muted group-hover:text-primary" />
-              </div>
-            </Link>
+                      <Trash2 className="h-4 w-4" />
+                      <span className="ml-1.5 sm:hidden">Eliminar</span>
+                    </Button>
+                  )}
+                </div>
+              ) : null}
+            </div>
           ))}
         </div>
       )}

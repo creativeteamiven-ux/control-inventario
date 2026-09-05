@@ -107,6 +107,7 @@ export default function Inventory() {
   const [selectedListId, setSelectedListId] = useState<string>('');
   const [addingToEvent, setAddingToEvent] = useState(false);
   const [limit, setLimit] = useState(25);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
@@ -608,63 +609,23 @@ export default function Inventory() {
       </aside>
 
       <div className="flex-1 min-w-0 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <h1 className="font-display text-2xl font-bold text-foreground">Inventario</h1>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="lg:hidden flex flex-wrap items-center gap-2">
-            <select
-              value={needsReview ? '__needs_review__' : (categoryId ?? '')}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v === '__needs_review__') { setNeedsReview(true); setCategoryId(null); }
-                else { setNeedsReview(false); setCategoryId(v || null); }
-                setPage(1);
-              }}
-              className="flex h-10 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary min-w-[180px]"
-            >
-              <option value="">Todas las categorías</option>
-              <option value="__needs_review__">Con observación</option>
-              {categoriesFlat.map((cat) => (
-                <option key={cat.id} value={cat.id}>{cat.name} ({cat.count})</option>
-              ))}
-            </select>
-            <select
-              value={locationFilter ?? ''}
-              onChange={(e) => { setLocationFilter(e.target.value || null); setPage(1); }}
-              className="flex h-10 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary min-w-[160px]"
-              title="Filtrar por lugar"
-            >
-              <option value="">Todos los lugares</option>
-              {locations.map((loc) => (
-                <option key={loc.code} value={loc.code}>{loc.name}</option>
-              ))}
-            </select>
-          </div>
-          <select
-            value={statusFilter ?? ''}
-            onChange={(e) => {
-              setStatusFilter(e.target.value || null);
-              setPage(1);
-            }}
-            className="flex h-10 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary min-w-[160px]"
-            title="Filtrar por estado"
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="lg:hidden min-h-touch"
+            onClick={() => setMobileFiltersOpen((v) => !v)}
           >
-            <option value="">Todos los estados</option>
-            {Object.entries(DEVICE_STATUS_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </select>
-          <select
-            value={limit}
-            onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }}
-            className="flex h-10 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary min-w-[100px]"
-            title="Mostrar por página"
-          >
-            <option value={25}>25</option>
-            <option value={50}>50</option>
-            <option value={100}>100</option>
-          </select>
-          <div className="relative flex-1 sm:max-w-xs">
+            <SlidersHorizontal className="h-4 w-4 mr-2" />
+            Filtros
+            {(categoryId || locationFilter || statusFilter || needsReview) && (
+              <span className="ml-1.5 h-2 w-2 rounded-full bg-primary" />
+            )}
+          </Button>
+          <div className="relative flex-1 min-w-[10rem] sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
             <Input
               placeholder="Buscar..."
@@ -676,99 +637,204 @@ export default function Inventory() {
               className="pl-9"
             />
           </div>
-          <div className="flex border border-border rounded-md p-1">
+          <div className="hidden md:flex border border-border rounded-md p-1">
             <button
+              type="button"
               onClick={() => setView('table')}
-              className={cn('p-2 rounded', view === 'table' ? 'bg-card-hover' : 'hover:bg-card-hover')}
+              className={cn('p-2 rounded no-touch-target', view === 'table' ? 'bg-card-hover' : 'hover:bg-card-hover')}
             >
               <List className="h-4 w-4" />
             </button>
             <button
+              type="button"
               onClick={() => setView('grid')}
-              className={cn('p-2 rounded', view === 'grid' ? 'bg-card-hover' : 'hover:bg-card-hover')}
+              className={cn('p-2 rounded no-touch-target', view === 'grid' ? 'bg-card-hover' : 'hover:bg-card-hover')}
             >
               <Grid3X3 className="h-4 w-4" />
             </button>
           </div>
           {canExport && (
-            <Button variant="outline" onClick={downloadTemplate}>
+            <Button variant="outline" className="hidden sm:inline-flex" onClick={downloadTemplate}>
               <Download className="h-4 w-4 mr-2" />
               Plantilla
             </Button>
           )}
           {canExport && (
-            <Button variant="outline" onClick={() => downloadLabels(false)} title="Genera una hoja PDF con etiquetas de código de barras de todos los equipos">
-              <Barcode className="h-4 w-4 mr-2" />
-              Etiquetas de barras
+            <Button variant="outline" className="hidden sm:inline-flex" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+              <Upload className="h-4 w-4 mr-2" />
+              {importing ? 'Importando…' : 'Importar'}
             </Button>
           )}
-          {canExport && (
-            <div className="relative">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                className="hidden"
-                onChange={handleImport}
-                disabled={importing}
-              />
-              <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}>
-                <Upload className="h-4 w-4 mr-2" />
-                {importing ? 'Importando...' : 'Importar'}
-              </Button>
-            </div>
-          )}
-          {canDelete && (
-            <Link to="/trash">
-              <Button variant="outline">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Papelera
-              </Button>
-            </Link>
-          )}
           {canCreate && (
-            <Button onClick={() => setAddModalOpen(true)}>
+            <Button onClick={() => setAddModalOpen(true)} className="min-h-touch">
               <Plus className="h-4 w-4 mr-2" />
-              Agregar equipo
+              <span className="sm:hidden">Nuevo</span>
+              <span className="hidden sm:inline">Agregar equipo</span>
             </Button>
           )}
         </div>
       </div>
 
+      {mobileFiltersOpen && (
+        <div className="lg:hidden rounded-xl border border-border bg-card p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Filtros</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="no-touch-target h-8"
+              onClick={() => {
+                setCategoryId(null);
+                setNeedsReview(false);
+                setLocationFilter(null);
+                setStatusFilter(null);
+                setPage(1);
+              }}
+            >
+              Limpiar
+            </Button>
+          </div>
+          <select
+            value={needsReview ? '__needs_review__' : (categoryId ?? '')}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === '__needs_review__') { setNeedsReview(true); setCategoryId(null); }
+              else { setNeedsReview(false); setCategoryId(v || null); }
+              setPage(1);
+            }}
+            className="w-full h-11 rounded-md border border-border bg-background px-3 text-sm"
+          >
+            <option value="">Todas las categorías</option>
+            <option value="__needs_review__">Con observación</option>
+            {categoriesFlat.map((cat) => (
+              <option key={cat.id} value={cat.id}>{cat.name} ({cat.count})</option>
+            ))}
+          </select>
+          <select
+            value={locationFilter ?? ''}
+            onChange={(e) => { setLocationFilter(e.target.value || null); setPage(1); }}
+            className="w-full h-11 rounded-md border border-border bg-background px-3 text-sm"
+          >
+            <option value="">Todos los lugares</option>
+            {locations.map((loc) => (
+              <option key={loc.code} value={loc.code}>{loc.name}</option>
+            ))}
+          </select>
+          <select
+            value={statusFilter ?? ''}
+            onChange={(e) => { setStatusFilter(e.target.value || null); setPage(1); }}
+            className="w-full h-11 rounded-md border border-border bg-background px-3 text-sm"
+          >
+            <option value="">Todos los estados</option>
+            {Object.entries(DEVICE_STATUS_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+          <select
+            value={limit}
+            onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }}
+            className="w-full h-11 rounded-md border border-border bg-background px-3 text-sm"
+          >
+            <option value={25}>25 por página</option>
+            <option value={50}>50 por página</option>
+            <option value={100}>100 por página</option>
+          </select>
+          <Button type="button" className="w-full min-h-touch" onClick={() => setMobileFiltersOpen(false)}>
+            Ver resultados
+          </Button>
+        </div>
+      )}
+
+      <div className="hidden lg:flex flex-wrap items-center gap-2">
+        <select
+          value={statusFilter ?? ''}
+          onChange={(e) => {
+            setStatusFilter(e.target.value || null);
+            setPage(1);
+          }}
+          className="flex h-10 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary min-w-[160px]"
+          title="Filtrar por estado"
+        >
+          <option value="">Todos los estados</option>
+          {Object.entries(DEVICE_STATUS_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+        <select
+          value={limit}
+          onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }}
+          className="flex h-10 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary min-w-[100px]"
+          title="Mostrar por página"
+        >
+          <option value={25}>25</option>
+          <option value={50}>50</option>
+          <option value={100}>100</option>
+        </select>
+        {canExport && (
+          <Button variant="outline" onClick={() => downloadLabels(false)} title="Genera una hoja PDF con etiquetas de código de barras de todos los equipos">
+            <Barcode className="h-4 w-4 mr-2" />
+            Etiquetas de barras
+          </Button>
+        )}
+        {canDelete && (
+          <Link to="/trash">
+            <Button variant="outline">
+              <Trash2 className="h-4 w-4 mr-2" />
+              Papelera
+            </Button>
+          </Link>
+        )}
+      </div>
+
+      {/* Input de importación (botón visible en sm+) */}
+      {canExport && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx,.xls"
+          className="hidden"
+          onChange={handleImport}
+          disabled={importing}
+        />
+      )}
+
       {selectedIds.size > 0 && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3">
-          <span className="font-medium text-foreground">{selectedIds.size} seleccionado(s)</span>
+        <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 sm:gap-3 rounded-xl border border-primary/30 bg-card/95 backdrop-blur px-3 sm:px-4 py-3 shadow-sm">
+          <span className="font-medium text-foreground text-sm sm:text-base">{selectedIds.size} seleccionado(s)</span>
           {canManageEvents && (
-            <Button variant="outline" size="sm" onClick={openAddToEvent}>
+            <Button variant="outline" size="sm" className="min-h-touch sm:min-h-0" onClick={openAddToEvent}>
               <CalendarDays className="h-4 w-4 mr-2" />
-              Agregar a evento
+              <span className="sm:hidden">Evento</span>
+              <span className="hidden sm:inline">Agregar a evento</span>
             </Button>
           )}
           {canMove && (
-            <Button variant="outline" size="sm" onClick={bulkAddToTransfer}>
+            <Button variant="outline" size="sm" className="min-h-touch sm:min-h-0" onClick={bulkAddToTransfer}>
               <Truck className="h-4 w-4 mr-2" />
-              Agregar al traslado
+              <span className="sm:hidden">Traslado</span>
+              <span className="hidden sm:inline">Agregar al traslado</span>
             </Button>
           )}
           {canEdit && (
-            <Button variant="outline" size="sm" onClick={() => setBulkStatusOpen(true)}>
-              Cambiar estado
+            <Button variant="outline" size="sm" className="min-h-touch sm:min-h-0" onClick={() => setBulkStatusOpen(true)}>
+              Estado
             </Button>
           )}
           {canMaintCreate && (
-            <Button variant="outline" size="sm" onClick={downloadMaintenanceTemplate}>
+            <Button variant="outline" size="sm" className="hidden sm:inline-flex" onClick={downloadMaintenanceTemplate}>
               <Download className="h-4 w-4 mr-2" />
               Plantilla mantenimiento
             </Button>
           )}
           {canExport && (
-            <Button variant="outline" size="sm" onClick={() => downloadLabels(true)}>
+            <Button variant="outline" size="sm" className="hidden sm:inline-flex" onClick={() => downloadLabels(true)}>
               <Barcode className="h-4 w-4 mr-2" />
               Etiquetas de barras
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={clearSelection}>
-            Limpiar selección
+          <Button variant="ghost" size="sm" className="min-h-touch sm:min-h-0" onClick={clearSelection}>
+            Limpiar
           </Button>
         </div>
       )}

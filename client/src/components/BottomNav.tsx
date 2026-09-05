@@ -3,31 +3,39 @@ import {
   LayoutDashboard,
   Package,
   ScanLine,
-  Wrench,
-  HandCoins,
+  CalendarDays,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { usePermissions } from '@/hooks/usePermissions';
 
 const mainNav = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/inventory', icon: Package, label: 'Inventario' },
-  { to: '/scan', icon: ScanLine, label: 'Escanear', highlight: true },
-  { to: '/loans', icon: HandCoins, label: 'Préstamos' },
-  { to: '/maintenance', icon: Wrench, label: 'Mantenimiento' },
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Inicio', perm: undefined as string | undefined },
+  { to: '/inventory', icon: Package, label: 'Inventario', perm: 'inventory.view' },
+  { to: '/scan', icon: ScanLine, label: 'Escanear', highlight: true, perm: undefined },
+  { to: '/events', icon: CalendarDays, label: 'Eventos', perm: 'events.view' },
+  { to: '/movements', icon: ArrowLeftRight, label: 'Movim.', perm: 'movements.view' },
 ];
 
 export default function BottomNav() {
+  const { hasPermission } = usePermissions();
+  const items = mainNav.filter((item) => !item.perm || hasPermission(item.perm));
+
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around border-t border-border bg-card/95 backdrop-blur md:hidden safe-area-pb"
-      style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0.5rem)' }}
+      className="fixed bottom-0 left-0 right-0 z-30 flex items-end justify-around gap-0.5 border-t border-border bg-card/95 backdrop-blur md:hidden px-1 pt-1"
+      style={{
+        paddingBottom: 'max(var(--safe-bottom), 0.4rem)',
+        minHeight: 'calc(var(--bottom-nav-h) + var(--safe-bottom))',
+      }}
+      aria-label="Navegación principal"
     >
-      {mainNav.map((item) =>
+      {items.map((item) =>
         item.highlight ? (
           <NavLink
             key={item.to}
             to={item.to}
-            className="flex flex-col items-center justify-center min-w-[56px] -mt-5"
+            className="flex flex-col items-center justify-center min-w-[3.5rem] -mt-4 no-touch-target"
           >
             {({ isActive }) => (
               <>
@@ -39,7 +47,7 @@ export default function BottomNav() {
                 >
                   <item.icon className="h-6 w-6" />
                 </span>
-                <span className={cn('text-[11px] font-medium mt-0.5', isActive ? 'text-primary' : 'text-muted')}>
+                <span className={cn('text-[10px] font-medium mt-0.5', isActive ? 'text-primary' : 'text-muted')}>
                   {item.label}
                 </span>
               </>
@@ -51,13 +59,13 @@ export default function BottomNav() {
             to={item.to}
             className={({ isActive }) =>
               cn(
-                'flex flex-col items-center justify-center min-w-[56px] min-h-touch py-2 text-xs font-medium transition-colors border-t-2 border-transparent',
-                isActive ? 'text-primary border-primary' : 'text-muted'
+                'flex flex-col items-center justify-center min-w-[3.25rem] min-h-[2.75rem] py-1.5 text-[10px] font-medium transition-colors no-touch-target',
+                isActive ? 'text-primary' : 'text-muted'
               )
             }
           >
-            <item.icon className="h-6 w-6 mb-0.5" />
-            <span>{item.label}</span>
+            <item.icon className="h-5 w-5 mb-0.5" />
+            <span className="leading-tight">{item.label}</span>
           </NavLink>
         )
       )}

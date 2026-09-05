@@ -279,7 +279,7 @@ export default function BarcodeScanner({
 
   return (
     <div className={cn('bg-card rounded-xl border border-border overflow-hidden', className)}>
-      <div className="relative bg-black min-h-[min(68vh,560px)] h-[min(68vh,560px)] flex items-center justify-center overflow-hidden">
+      <div className="relative bg-black min-h-[min(48vh,420px)] h-[min(48vh,420px)] sm:min-h-[min(60vh,520px)] sm:h-[min(60vh,520px)] md:min-h-[min(68vh,560px)] md:h-[min(68vh,560px)] flex items-center justify-center overflow-hidden">
         <video
           ref={videoRef}
           id={readerId}

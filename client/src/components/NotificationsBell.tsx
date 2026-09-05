@@ -81,37 +81,45 @@ export default function NotificationsBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-[340px] max-w-[90vw] bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <h3 className="font-semibold text-sm">Notificaciones {count > 0 && `(${count})`}</h3>
-            <button type="button" onClick={() => setOpen(false)} className="text-muted hover:text-foreground">
-              <X className="h-4 w-4" />
-            </button>
+        <>
+          <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setOpen(false)} aria-hidden />
+          <div className="fixed inset-x-3 top-16 z-50 max-h-[min(70dvh,520px)] rounded-xl border border-border bg-card shadow-xl overflow-hidden md:absolute md:inset-auto md:right-0 md:top-auto md:mt-2 md:w-[340px] md:max-w-[90vw]">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+              <h3 className="font-semibold text-sm">Notificaciones {count > 0 && `(${count})`}</h3>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="min-h-touch min-w-touch flex items-center justify-center text-muted hover:text-foreground"
+                aria-label="Cerrar"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="max-h-[min(55dvh,440px)] overflow-y-auto">
+              {alerts.length === 0 ? (
+                <p className="p-6 text-center text-sm text-muted">No hay alertas pendientes</p>
+              ) : (
+                alerts.slice(0, 50).map((a) => {
+                  const Icon = SEVERITY_ICON[a.severity];
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => { setOpen(false); navigate(a.link); }}
+                      className="w-full text-left flex items-start gap-3 px-4 py-3.5 hover:bg-card-hover border-b border-border last:border-0 min-h-touch"
+                    >
+                      <Icon className={cn('h-4 w-4 mt-0.5 shrink-0', SEVERITY_COLOR[a.severity])} />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground">{a.title}</p>
+                        <p className="text-xs text-muted line-clamp-2">{a.message}</p>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
           </div>
-          <div className="max-h-[60vh] overflow-y-auto">
-            {alerts.length === 0 ? (
-              <p className="p-6 text-center text-sm text-muted">No hay alertas pendientes ✅</p>
-            ) : (
-              alerts.slice(0, 50).map((a) => {
-                const Icon = SEVERITY_ICON[a.severity];
-                return (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onClick={() => { setOpen(false); navigate(a.link); }}
-                    className="w-full text-left flex items-start gap-3 px-4 py-3 hover:bg-card-hover border-b border-border last:border-0"
-                  >
-                    <Icon className={cn('h-4 w-4 mt-0.5 shrink-0', SEVERITY_COLOR[a.severity])} />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground">{a.title}</p>
-                      <p className="text-xs text-muted truncate">{a.message}</p>
-                    </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
+        </>
       )}
     </div>
   );

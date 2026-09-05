@@ -3,6 +3,11 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --bottom-nav-h: 4.25rem;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
   html {
     @apply overflow-x-hidden;
   }
@@ -14,19 +19,38 @@
   input, select, textarea, button {
     font-size: max(16px, 1rem);
   }
-  /* Touch targets mínimo 44x44px */
+  /*
+   * Touch targets: solo acciones primarias / navegación.
+   * Chips, iconos densos y size=sm usan .no-touch-target o no reciben forzado.
+   */
   @media (max-width: 767px) {
-    button:not(.no-touch-target),
-    a[role="button"],
-    [role="button"] {
+    button.min-h-touch,
+    a.min-h-touch,
+    .min-h-touch {
       min-height: 44px;
+    }
+    .min-w-touch {
       min-width: 44px;
     }
   }
 }
 
 .safe-area-pb {
-  padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+  padding-bottom: max(var(--safe-bottom), 0.5rem);
+}
+
+.safe-area-pt {
+  padding-top: max(var(--safe-top), 0px);
+}
+
+/* Espacio para BottomNav + home indicator */
+.pb-mobile-nav {
+  padding-bottom: calc(var(--bottom-nav-h) + var(--safe-bottom) + 0.75rem);
+}
+@media (min-width: 768px) {
+  .pb-mobile-nav {
+    padding-bottom: 0;
+  }
 }
 
 /* Scrollbars elegantes en toda la app */

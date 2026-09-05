@@ -112,92 +112,176 @@ export default function Loans() {
       {isLoading ? (
         <div className="bg-card rounded-xl border border-border p-12 text-center text-muted">Cargando...</div>
       ) : (
-        <div className="bg-card rounded-xl border border-border overflow-hidden overflow-x-auto">
-          <table className="w-full min-w-[720px]">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left py-4 px-4 font-medium text-muted">Equipo</th>
-                <th className="text-left py-4 px-4 font-medium text-muted">Prestatario</th>
-                <th className="text-left py-4 px-4 font-medium text-muted">Propósito</th>
-                <th className="text-left py-4 px-4 font-medium text-muted">Préstamo</th>
-                <th className="text-left py-4 px-4 font-medium text-muted">Devolución esperada</th>
-                <th className="text-left py-4 px-4 font-medium text-muted">Estado</th>
-                {canManage && <th className="text-right py-4 px-4 font-medium text-muted">Acciones</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((l) => {
-                const overdue = isOverdue(l);
-                return (
-                  <tr key={l.id} className="border-b border-border hover:bg-card-hover/50">
-                    <td className="py-3 px-4">
-                      <p className="font-medium">{l.device?.name}</p>
-                      <p className="text-sm text-muted">{l.device?.internalCode}</p>
-                    </td>
-                    <td className="py-3 px-4">{l.borrowerName}</td>
-                    <td className="py-3 px-4">{l.purpose}</td>
-                    <td className="py-3 px-4 text-sm">{format(new Date(l.loanDate), 'dd MMM yyyy', { locale: es })}</td>
-                    <td className={`py-3 px-4 text-sm ${overdue ? 'text-red-500 font-medium' : ''}`}>
-                      {format(new Date(l.expectedReturn), 'dd MMM yyyy', { locale: es })}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span
-                        className={`px-2 py-0.5 rounded text-xs ${
-                          overdue
-                            ? 'bg-red-500/20 text-red-400'
-                            : l.status === 'ACTIVE'
-                              ? 'bg-green-500/20 text-green-400'
-                              : l.status === 'RETURNED'
-                                ? 'bg-slate-500/20 text-slate-400'
-                                : 'bg-red-500/20 text-red-400'
-                        }`}
+        <>
+          {/* Cards móvil */}
+          <div className="md:hidden space-y-3">
+            {items.map((l) => {
+              const overdue = isOverdue(l);
+              return (
+                <div key={l.id} className="bg-card rounded-xl border border-border p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{l.device?.name}</p>
+                      <p className="text-xs font-mono text-muted">{l.device?.internalCode}</p>
+                    </div>
+                    <span
+                      className={`shrink-0 px-2 py-0.5 rounded text-xs ${
+                        overdue
+                          ? 'bg-red-500/20 text-red-400'
+                          : l.status === 'ACTIVE'
+                            ? 'bg-green-500/20 text-green-400'
+                            : l.status === 'RETURNED'
+                              ? 'bg-slate-500/20 text-slate-400'
+                              : 'bg-red-500/20 text-red-400'
+                      }`}
+                    >
+                      {overdue ? 'Vencido' : loanStatusLabel(l.status)}
+                    </span>
+                  </div>
+                  <dl className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <dt className="text-xs text-muted">Prestatario</dt>
+                      <dd className="truncate">{l.borrowerName}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted">Propósito</dt>
+                      <dd className="truncate">{l.purpose}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted">Préstamo</dt>
+                      <dd>{format(new Date(l.loanDate), 'dd MMM yyyy', { locale: es })}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs text-muted">Dev. esperada</dt>
+                      <dd className={overdue ? 'text-red-500 font-medium' : ''}>
+                        {format(new Date(l.expectedReturn), 'dd MMM yyyy', { locale: es })}
+                      </dd>
+                    </div>
+                  </dl>
+                  {canManage && (
+                    <div className="flex gap-2 pt-1">
+                      {l.status === 'ACTIVE' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 min-h-touch"
+                          onClick={() => handleReturn(l.id, l.device?.name ?? 'equipo')}
+                          disabled={returningId === l.id}
+                        >
+                          <RotateCcw className="h-4 w-4 mr-2" />
+                          {returningId === l.id ? 'Registrando...' : 'Marcar devuelto'}
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive min-h-touch"
+                        onClick={() => handleDelete(l.id, l.device?.name ?? 'equipo', l.status)}
+                        disabled={deletingId === l.id}
                       >
-                        {overdue ? 'Vencido' : loanStatusLabel(l.status)}
-                      </span>
-                    </td>
-                    {canManage && (
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {l.status === 'ACTIVE' ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleReturn(l.id, l.device?.name ?? 'equipo')}
-                              disabled={returningId === l.id}
-                            >
-                              <RotateCcw className="h-4 w-4 mr-2" />
-                              {returningId === l.id ? 'Registrando...' : 'Marcar devuelto'}
-                            </Button>
-                          ) : (
-                            <span className="text-xs text-muted">
-                              {l.returnDate ? `Devuelto ${format(new Date(l.returnDate), 'dd MMM yyyy', { locale: es })}` : '—'}
-                            </span>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted hover:text-destructive"
-                            onClick={() => handleDelete(l.id, l.device?.name ?? 'equipo', l.status)}
-                            disabled={deletingId === l.id}
-                            title="Eliminar préstamo"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {items.length === 0 && (
+              <div className="p-12 text-center text-muted flex flex-col items-center gap-2 bg-card rounded-xl border border-border">
+                <HandCoins className="h-12 w-12" />
+                <p>No hay préstamos registrados</p>
+              </div>
+            )}
+          </div>
+
+          {/* Tabla desktop */}
+          <div className="hidden md:block bg-card rounded-xl border border-border overflow-hidden overflow-x-auto">
+            <table className="w-full min-w-[720px]">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left py-4 px-4 font-medium text-muted">Equipo</th>
+                  <th className="text-left py-4 px-4 font-medium text-muted">Prestatario</th>
+                  <th className="text-left py-4 px-4 font-medium text-muted">Propósito</th>
+                  <th className="text-left py-4 px-4 font-medium text-muted">Préstamo</th>
+                  <th className="text-left py-4 px-4 font-medium text-muted">Devolución esperada</th>
+                  <th className="text-left py-4 px-4 font-medium text-muted">Estado</th>
+                  {canManage && <th className="text-right py-4 px-4 font-medium text-muted">Acciones</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((l) => {
+                  const overdue = isOverdue(l);
+                  return (
+                    <tr key={l.id} className="border-b border-border hover:bg-card-hover/50">
+                      <td className="py-3 px-4">
+                        <p className="font-medium">{l.device?.name}</p>
+                        <p className="text-sm text-muted">{l.device?.internalCode}</p>
                       </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {items.length === 0 && (
-            <div className="p-12 text-center text-muted flex flex-col items-center gap-2">
-              <HandCoins className="h-12 w-12" />
-              <p>No hay préstamos registrados</p>
-            </div>
-          )}
-        </div>
+                      <td className="py-3 px-4">{l.borrowerName}</td>
+                      <td className="py-3 px-4">{l.purpose}</td>
+                      <td className="py-3 px-4 text-sm">{format(new Date(l.loanDate), 'dd MMM yyyy', { locale: es })}</td>
+                      <td className={`py-3 px-4 text-sm ${overdue ? 'text-red-500 font-medium' : ''}`}>
+                        {format(new Date(l.expectedReturn), 'dd MMM yyyy', { locale: es })}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span
+                          className={`px-2 py-0.5 rounded text-xs ${
+                            overdue
+                              ? 'bg-red-500/20 text-red-400'
+                              : l.status === 'ACTIVE'
+                                ? 'bg-green-500/20 text-green-400'
+                                : l.status === 'RETURNED'
+                                  ? 'bg-slate-500/20 text-slate-400'
+                                  : 'bg-red-500/20 text-red-400'
+                          }`}
+                        >
+                          {overdue ? 'Vencido' : loanStatusLabel(l.status)}
+                        </span>
+                      </td>
+                      {canManage && (
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {l.status === 'ACTIVE' ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleReturn(l.id, l.device?.name ?? 'equipo')}
+                                disabled={returningId === l.id}
+                              >
+                                <RotateCcw className="h-4 w-4 mr-2" />
+                                {returningId === l.id ? 'Registrando...' : 'Marcar devuelto'}
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted">
+                                {l.returnDate ? `Devuelto ${format(new Date(l.returnDate), 'dd MMM yyyy', { locale: es })}` : '—'}
+                              </span>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted hover:text-destructive no-touch-target"
+                              onClick={() => handleDelete(l.id, l.device?.name ?? 'equipo', l.status)}
+                              disabled={deletingId === l.id}
+                              title="Eliminar préstamo"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {items.length === 0 && (
+              <div className="p-12 text-center text-muted flex flex-col items-center gap-2">
+                <HandCoins className="h-12 w-12" />
+                <p>No hay préstamos registrados</p>
+              </div>
+            )}
+          </div>
+        </>
       )}
       <AddLoanModal open={addOpen} onOpenChange={setAddOpen} />
     </motion.div>

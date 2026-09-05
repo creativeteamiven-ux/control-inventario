@@ -26,8 +26,7 @@ export default function Header({ onMenuClick, onOpenSearch }: HeaderProps) {
   }, [onOpenSearch]);
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 md:h-16 items-center gap-2 md:gap-4 border-b border-border bg-background/95 px-3 md:px-6 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      {/* Hamburger solo móvil */}
+    <header className="sticky top-0 z-30 flex h-14 md:h-16 items-center gap-2 md:gap-4 border-b border-border bg-background/95 px-3 md:px-6 backdrop-blur supports-[backdrop-filter]:bg-background/60 safe-area-pt">
       <button
         type="button"
         onClick={onMenuClick}
@@ -37,9 +36,7 @@ export default function Header({ onMenuClick, onOpenSearch }: HeaderProps) {
         <Menu className="h-6 w-6" />
       </button>
 
-      {/* Búsqueda: abre el palette global (Ctrl+K) */}
       <div className="flex-1 flex items-center gap-2 min-w-0">
-        {/* Móvil: ícono lupa */}
         <button
           type="button"
           onClick={() => onOpenSearch?.()}
@@ -48,7 +45,6 @@ export default function Header({ onMenuClick, onOpenSearch }: HeaderProps) {
         >
           <Search className="h-5 w-5" />
         </button>
-        {/* Escritorio: barra que abre el palette */}
         <button
           type="button"
           onClick={() => onOpenSearch?.()}
@@ -60,26 +56,27 @@ export default function Header({ onMenuClick, onOpenSearch }: HeaderProps) {
         </button>
       </div>
 
-      <div className="flex items-center gap-1 md:gap-2 shrink-0">
+      <div className="flex items-center gap-0.5 sm:gap-1 md:gap-2 shrink-0">
+        {/* Escanear solo en desktop: en móvil está en BottomNav */}
         <button
           type="button"
           onClick={() => navigate('/scan')}
-          className="p-2 rounded-md hover:bg-card text-muted hover:text-primary min-h-touch min-w-touch flex items-center justify-center md:min-h-0 md:min-w-0"
+          className="hidden md:flex p-2 rounded-md hover:bg-card text-muted hover:text-primary items-center justify-center"
           aria-label="Escanear equipo"
           title="Escanear equipo"
         >
           <ScanLine className="h-5 w-5" />
         </button>
         <NotificationsBell />
-        <div className="flex items-center gap-2 pl-2 border-l border-border">
+        <div className="flex items-center gap-1.5 sm:gap-2 pl-1.5 sm:pl-2 border-l border-border">
           <div className="h-8 w-8 rounded-full bg-accent flex items-center justify-center shrink-0">
             <User className="h-4 w-4 text-foreground" />
           </div>
-          <div className="hidden sm:block min-w-0">
+          <div className="hidden md:block min-w-0">
             <p className="text-sm font-medium truncate">{user?.name}</p>
             <p className="text-xs text-muted truncate">{user?.role}</p>
           </div>
-          <Button variant="ghost" size="sm" onClick={logout} className="min-h-touch md:min-h-0">
+          <Button variant="ghost" size="sm" onClick={logout} className="hidden sm:inline-flex">
             Salir
           </Button>
         </div>

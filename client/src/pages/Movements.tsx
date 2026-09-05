@@ -272,8 +272,8 @@ export default function Movements() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="font-display text-2xl font-bold text-foreground">Movimientos</h1>
         {canManage && (
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setPickerOpen(true)}>
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setPickerOpen(true)} className="col-span-2 sm:col-span-1 min-h-touch sm:min-h-0">
               <Plus className="h-4 w-4 mr-2" />
               Agregar equipos
               {cart.length > 0 && (
@@ -282,9 +282,10 @@ export default function Movements() {
                 </span>
               )}
             </Button>
-            <Button variant="outline" onClick={downloadTemplate}>
+            <Button variant="outline" onClick={downloadTemplate} className="min-h-touch sm:min-h-0">
               <Download className="h-4 w-4 mr-2" />
-              {cart.length > 0 ? 'Descargar plantilla con carrito' : 'Plantilla traslados'}
+              <span className="sm:hidden">Plantilla</span>
+              <span className="hidden sm:inline">{cart.length > 0 ? 'Descargar plantilla con carrito' : 'Plantilla traslados'}</span>
             </Button>
             <div className="relative">
               <input
@@ -295,9 +296,14 @@ export default function Movements() {
                 onChange={handleImport}
                 disabled={importing}
               />
-              <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+              <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importing} className="w-full min-h-touch sm:min-h-0">
                 <Upload className="h-4 w-4 mr-2" />
-                {importing ? 'Importando...' : 'Importar traslados'}
+                {importing ? 'Importando...' : (
+                  <>
+                    <span className="sm:hidden">Importar</span>
+                    <span className="hidden sm:inline">Importar traslados</span>
+                  </>
+                )}
               </Button>
             </div>
           </div>
@@ -332,7 +338,7 @@ export default function Movements() {
         ) : (
           <ul className="space-y-2 max-h-80 overflow-y-auto">
             {pendingData.items.map((m) => (
-              <li key={m.id} className="flex items-start gap-3 p-3 rounded-lg border border-border bg-background">
+              <li key={m.id} className="flex flex-col sm:flex-row sm:items-start gap-3 p-3 rounded-lg border border-border bg-background">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{m.device.name}</p>
                   <p className="text-xs font-mono text-muted">{m.device.internalCode}</p>
@@ -346,11 +352,11 @@ export default function Movements() {
                   </p>
                 </div>
                 {canManage && (
-                  <div className="flex flex-col gap-1 shrink-0">
-                    <Button size="sm" onClick={() => openApproveOne(m.id)}>
+                  <div className="flex gap-2 sm:flex-col sm:gap-1.5 shrink-0 w-full sm:w-auto sm:min-w-[7rem]">
+                    <Button size="sm" className="flex-1 sm:flex-none min-h-touch sm:min-h-0 w-full" onClick={() => openApproveOne(m.id)}>
                       Autorizar
                     </Button>
-                    <Button size="sm" variant="ghost" className="text-destructive" onClick={() => rejectOne(m.id)}>
+                    <Button size="sm" variant="ghost" className="flex-1 sm:flex-none text-destructive min-h-touch sm:min-h-0 w-full" onClick={() => rejectOne(m.id)}>
                       Rechazar
                     </Button>
                   </div>
