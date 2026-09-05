@@ -18,8 +18,11 @@ export default function LocationSelect({
   allowEmpty,
   emptyLabel = 'Todos los lugares',
 }: LocationSelectProps) {
-  const { locations, isLoading } = useLocations();
+  const { locations, isLoading, label } = useLocations();
   const known = locations.some((l) => l.code === value);
+  const orphanLabel = value?.startsWith('@')
+    ? `${value.slice(1)} (lugar temporal del evento)`
+    : label(value) || value;
 
   return (
     <select
@@ -33,7 +36,7 @@ export default function LocationSelect({
     >
       {allowEmpty && <option value="">{emptyLabel}</option>}
       {isLoading && <option value={value || ''}>Cargando lugares...</option>}
-      {!known && value && <option value={value}>{value}</option>}
+      {!known && value && <option value={value}>{orphanLabel}</option>}
       {locations.map((l) => (
         <option key={l.code} value={l.code}>
           {l.name}

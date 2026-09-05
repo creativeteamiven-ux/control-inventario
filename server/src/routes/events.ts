@@ -405,17 +405,157 @@ router.post('/:id/items', requirePermission('events.manage'), async (req: AuthRe
   }
 });
 
-/** Quitar equipo */
-router.delete('/:id/items/:itemId', requirePermission('events.manage'), async (req, res, next) => {
+/** Quitar equipo (opcional: devolver ubicación si quedó en el destino del evento) */
+router.delete('/:id/items/:itemId', requirePermission('events.manage'), async (req: AuthRequest, res, next) => {
   try {
+    const restoreLocation = String(req.query.restoreLocation ?? '') === '1' || req.query.restoreLocation === 'true';
     const item = await prisma.eventItem.findFirst({
       where: { id: req.params.itemId, eventId: req.params.id },
+      include: { device: { select: { id: true, location: true, name: true, internalCode: true } } },
     });
     if (!item) throw new AppError(404, 'Ítem no encontrado');
+
+    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+    if (!event) throw new AppError(404, 'Evento no encontrado');
+
+    let restored = false;
+    if (restoreLocation && item.device.location === event.toLocation) {
+      const backTo = item.originLocation || event.fromLocation;
+      await prisma.$transaction([
+        prisma.device.update({ where: { id: item.deviceId }, data: { location: backTo } }),
+        prisma.movement.create({
+          data: {
+            deviceId: item.deviceId,
+            type: MovementType.TRANSFER,
+            status: MovementStatus.APPROVED,
+            fromLocation: event.toLocation,
+            toLocation: backTo,
+            reason: `Corrección: quitado del evento "${event.name}"`,
+            userId: req.user!.userId,
+            eventId: event.id,
+            approvedBy: req.user!.userId,
+            approvedAt: new Date(),
+          },
+        }),
+      ]);
+      restored = true;
+    }
+
     await prisma.eventItem.delete({ where: { id: item.id } });
-    const event = await loadEvent(req.params.id);
+    await writeAudit(req, 'Event', event.id, 'UPDATE', {
+      removeItem: item.deviceId,
+      restoredLocation: restored,
+    });
+    const full = await loadEvent(req.params.id);
     const names = await locationNames();
-    res.json(mapEventResponse(event, names));
+    res.json({ ...mapEventResponse(full, names), restoredLocation: restored });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * Equipos que siguen en el lugar del evento (aunque ya no estén en la lista).
+ * Útil cuando se quitaron de la lista pero quedaron en un destino temporal.
+ */
+router.get('/:id/stranded', requirePermission('events.view'), async (req, res, next) => {
+  try {
+    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+    if (!event) throw new AppError(404, 'Evento no encontrado');
+
+    const onList = await prisma.eventItem.findMany({
+      where: { eventId: event.id },
+      select: { deviceId: true, originLocation: true },
+    });
+    const originByDevice = Object.fromEntries(onList.map((i) => [i.deviceId, i.originLocation]));
+
+    const devices = await prisma.device.findMany({
+      where: { deletedAt: null, location: event.toLocation },
+      select: {
+        id: true,
+        name: true,
+        internalCode: true,
+        location: true,
+        images: { orderBy: { order: 'asc' }, take: 1 },
+      },
+      orderBy: { internalCode: 'asc' },
+      take: 200,
+    });
+
+    const names = await locationNames();
+    res.json({
+      eventLocation: event.toLocation,
+      eventLocationLabel: locationDisplayName(event.toLocation, names),
+      fromLocation: event.fromLocation,
+      fromLocationLabel: locationDisplayName(event.fromLocation, names),
+      devices: devices.map((d) => ({
+        ...d,
+        onEventList: d.id in originByDevice,
+        suggestedReturn: originByDevice[d.id] || event.fromLocation,
+        suggestedReturnLabel: locationDisplayName(originByDevice[d.id] || event.fromLocation, names),
+      })),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** Devolver equipos del lugar del evento a un origen registrado */
+router.post('/:id/restore-locations', requirePermission('events.manage'), async (req: AuthRequest, res, next) => {
+  try {
+    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+    if (!event) throw new AppError(404, 'Evento no encontrado');
+
+    const { deviceIds, toLocation } = req.body as { deviceIds?: string[]; toLocation?: string };
+    const target = toLocation
+      ? await assertLocationCode(prisma, toLocation)
+      : event.fromLocation;
+
+    const whereDevice =
+      deviceIds?.length
+        ? { id: { in: deviceIds }, deletedAt: null, location: event.toLocation }
+        : { deletedAt: null, location: event.toLocation };
+
+    const devices = await prisma.device.findMany({
+      where: whereDevice,
+      select: { id: true, location: true },
+    });
+    if (!devices.length) throw new AppError(400, 'No hay equipos en el lugar del evento para corregir');
+
+    const items = await prisma.eventItem.findMany({
+      where: { eventId: event.id, deviceId: { in: devices.map((d) => d.id) } },
+      select: { deviceId: true, originLocation: true },
+    });
+    const originByDevice = Object.fromEntries(items.map((i) => [i.deviceId, i.originLocation]));
+
+    const userId = req.user!.userId;
+    let restored = 0;
+    for (const d of devices) {
+      let dest = toLocation ? target : originByDevice[d.id] || event.fromLocation;
+      if (isTemporaryLocation(dest)) dest = event.fromLocation;
+      dest = await assertLocationCode(prisma, dest);
+      await prisma.$transaction([
+        prisma.device.update({ where: { id: d.id }, data: { location: dest } }),
+        prisma.movement.create({
+          data: {
+            deviceId: d.id,
+            type: MovementType.TRANSFER,
+            status: MovementStatus.APPROVED,
+            fromLocation: event.toLocation,
+            toLocation: dest,
+            reason: `Corrección ubicación tras evento "${event.name}"`,
+            userId,
+            eventId: event.id,
+            approvedBy: userId,
+            approvedAt: new Date(),
+          },
+        }),
+      ]);
+      restored++;
+    }
+
+    await writeAudit(req, 'Event', event.id, 'UPDATE', { restoreLocations: restored, toLocation: target });
+    res.json({ ok: true, restored, toLocation: target });
   } catch (e) {
     next(e);
   }

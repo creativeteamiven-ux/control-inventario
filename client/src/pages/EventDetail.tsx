@@ -161,6 +161,26 @@ export default function EventDetailPage() {
     refetchInterval: (q) => (q.state.data?.status === 'ACTIVE' ? 5000 : false),
   });
 
+  const { data: stranded } = useQuery({
+    queryKey: ['event-stranded', id],
+    queryFn: async () => {
+      const { data } = await api.get<{
+        eventLocationLabel: string;
+        fromLocationLabel: string;
+        devices: {
+          id: string;
+          name: string;
+          internalCode: string;
+          onEventList: boolean;
+          suggestedReturnLabel: string;
+        }[];
+      }>(`/api/events/${id}/stranded`);
+      return data;
+    },
+    enabled: !!id && !!event,
+    refetchInterval: 15000,
+  });
+
   const { data: categoriesData } = useQuery({
     queryKey: ['categories'],
     queryFn: async () => {
@@ -407,14 +427,51 @@ export default function EventDetailPage() {
     }
   };
 
-  const handleRemoveItem = async (itemId: string, name: string) => {
-    if (!id || !confirm(`¿Quitar "${name}" de la lista?`)) return;
+  const handleRemoveItem = async (itemId: string, name: string, deviceLocation?: string) => {
+    if (!id || !event) return;
+    const atEvent = deviceLocation === event.toLocation;
+    let restore = false;
+    if (atEvent) {
+      const withRestore = confirm(
+        `"${name}" está en el lugar del evento.\n\nAceptar: quitar de la lista y devolverlo al origen/almacén.\nCancelar: ver otra opción.`
+      );
+      if (withRestore) {
+        restore = true;
+      } else {
+        const onlyList = confirm(`¿Quitar solo de la lista? (el equipo seguirá en el lugar del evento)`);
+        if (!onlyList) return;
+      }
+    } else if (!confirm(`¿Quitar "${name}" de la lista?`)) {
+      return;
+    }
     try {
-      await api.delete(`/api/events/${id}/items/${itemId}`);
+      await api.delete(`/api/events/${id}/items/${itemId}${restore ? '?restoreLocation=1' : ''}`);
       await queryClient.invalidateQueries({ queryKey: ['event', id] });
-      toast.success('Equipo quitado');
+      await queryClient.invalidateQueries({ queryKey: ['event-stranded', id] });
+      if (restore) await queryClient.invalidateQueries({ queryKey: ['devices'] });
+      toast.success(restore ? 'Equipo quitado y ubicación corregida' : 'Equipo quitado');
     } catch {
       toast.error('No se pudo quitar');
+    }
+  };
+
+  const handleRestoreStranded = async (deviceIds?: string[]) => {
+    if (!id || !event) return;
+    const msg = deviceIds?.length
+      ? `¿Devolver ${deviceIds.length} equipo(s) desde "${toLabel}" al origen del evento?`
+      : `¿Devolver TODOS los equipos que siguen en "${toLabel}" al origen del evento?`;
+    if (!confirm(msg)) return;
+    try {
+      const { data } = await api.post<{ restored: number }>(`/api/events/${id}/restore-locations`, {
+        deviceIds,
+        toLocation: event.fromLocation,
+      });
+      await queryClient.invalidateQueries({ queryKey: ['event-stranded', id] });
+      await queryClient.invalidateQueries({ queryKey: ['devices'] });
+      toast.success(`${data.restored} equipo(s) devuelto(s) a ${fromLabel}`);
+    } catch (err: unknown) {
+      const m = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error';
+      toast.error(m);
     }
   };
 
@@ -467,6 +524,49 @@ export default function EventDetailPage() {
           </p>
         </div>
       </div>
+
+      {/* Equipos atrapados en el lugar temporal del evento */}
+      {canManage && (stranded?.devices?.length ?? 0) > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4 space-y-3">
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <div>
+              <h2 className="font-semibold flex items-center gap-2 text-amber-200">
+                <AlertTriangle className="h-4 w-4" />
+                Equipos aún en “{stranded?.eventLocationLabel}”
+              </h2>
+              <p className="text-xs text-muted mt-1">
+                Están marcados en el lugar del evento (puede ser temporal). Si ya no van a usarse aquí, devuélvelos
+                a un lugar registrado del inventario.
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => handleRestoreStranded()}>
+              Devolver todos a {fromLabel}
+            </Button>
+          </div>
+          <ul className="space-y-2">
+            {stranded!.devices.map((d) => (
+              <li
+                key={d.id}
+                className="flex items-center justify-between gap-2 p-2 rounded-lg bg-card/60 border border-border text-sm"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{d.name}</p>
+                  <p className="text-xs font-mono text-muted">
+                    {d.internalCode}
+                    {!d.onEventList && ' · ya no está en la lista'}
+                  </p>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => handleRestoreStranded([d.id])}>
+                  Devolver
+                </Button>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-muted">
+            También puedes corregir la ubicación editando el equipo en Inventario.
+          </p>
+        </div>
+      )}
 
       {/* Listas */}
       <div className="bg-card rounded-xl border border-border p-4 space-y-3">
@@ -855,12 +955,12 @@ export default function EventDetailPage() {
                   {done && doneUser && <p className="text-xs text-green-400/80 mt-0.5">Verificado por {doneUser}</p>}
                   {sent && <p className="text-xs text-amber-400 mt-0.5">Enviado a Movimientos (pendiente autorización)</p>}
                 </div>
-                {canManage && isDraft && (
+                {canManage && (isDraft || item.device.location === event.toLocation) && (
                   <Button
                     variant="ghost"
                     size="sm"
                     className="text-destructive shrink-0"
-                    onClick={() => handleRemoveItem(item.id, item.device.name)}
+                    onClick={() => handleRemoveItem(item.id, item.device.name, item.device.location)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
