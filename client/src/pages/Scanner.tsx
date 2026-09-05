@@ -1,12 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import {
   ScanLine,
-  Camera,
-  CameraOff,
   Package,
   Pencil,
   ArrowRight,
@@ -14,49 +11,22 @@ import {
   RotateCcw,
   Loader2,
   CheckCircle2,
-  SwitchCamera,
   Truck,
   Check,
   CalendarDays,
   ListPlus,
   ExternalLink,
-  Flashlight,
-  FlashlightOff,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
 import { addToStoredCart, getStoredCart } from '@/lib/transferCart';
 import { getBuildEventId, setBuildEventId } from '@/lib/eventBuild';
-import {
-  applyScanFocusHints,
-  getVideoTrackFromReader,
-  hardenVideoForIOS,
-  isAppleMobile,
-  pickPreferredScanCamera,
-  setTrackTorch,
-  trackSupportsTorch,
-  waitForTorchSupport,
-} from '@/lib/cameraTorch';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { deviceStatusLabel } from '@/lib/statusLabels';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useLocations } from '@/hooks/useLocations';
 import BarcodeScanner from '@/components/BarcodeScanner';
-
-const READER_ID = 'barcode-reader';
-
-/** Formatos 1D priorizados: CODE128 es el de nuestras etiquetas; el resto cubre series de fábrica. */
-const BARCODE_FORMATS = [
-  Html5QrcodeSupportedFormats.CODE_128,
-  Html5QrcodeSupportedFormats.CODE_39,
-  Html5QrcodeSupportedFormats.EAN_13,
-  Html5QrcodeSupportedFormats.EAN_8,
-  Html5QrcodeSupportedFormats.UPC_A,
-  Html5QrcodeSupportedFormats.UPC_E,
-  Html5QrcodeSupportedFormats.ITF,
-  Html5QrcodeSupportedFormats.CODABAR,
-];
 
 const STATUS_BADGE: Record<string, string> = {
   ACTIVE: 'bg-green-500/20 text-green-400',
@@ -72,26 +42,6 @@ const QUICK_STATUSES: { value: string; label: string; className: string }[] = [
   { value: 'MAINTENANCE', label: 'Mantenimiento', className: 'border-amber-500/40 text-amber-400 hover:bg-amber-500/10' },
   { value: 'DAMAGED', label: 'Dañado', className: 'border-red-500/40 text-red-400 hover:bg-red-500/10' },
 ];
-
-interface CameraOption {
-  id: string;
-  label: string;
-}
-
-/** Ventana horizontal; en iOS un poco más alta para ayudar al foco. */
-function barcodeScanBox(viewW: number, viewH: number) {
-  const apple = isAppleMobile();
-  const width = Math.floor(Math.min(viewW * (apple ? 0.92 : 0.88), viewW - 16));
-  const height = Math.floor(
-    Math.min(Math.max(viewH * (apple ? 0.22 : 0.16), apple ? 110 : 96), apple ? 160 : 132)
-  );
-  return { width, height };
-}
-
-const VIDEO_CONSTRAINTS_BASE = {
-  width: { min: 640, ideal: 1280 },
-  height: { min: 480, ideal: 720 },
-};
 
 interface ScannedDevice {
   id: string;
@@ -147,6 +97,13 @@ export default function Scanner() {
   const [addingToEvent, setAddingToEvent] = useState(false);
   const [selectedEventForDevice, setSelectedEventForDevice] = useState<string>('');
 
+  const [lookupActive, setLookupActive] = useState(true);
+  const [looking, setLooking] = useState(false);
+  const [device, setDevice] = useState<ScannedDevice | null>(null);
+  const [notFoundCode, setNotFoundCode] = useState<string | null>(null);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [addedToCart, setAddedToCart] = useState(false);
+
   const { data: draftEvents = [] } = useQuery({
     queryKey: ['events', 'DRAFT'],
     queryFn: async () => {
@@ -198,6 +155,31 @@ export default function Scanner() {
     [eventBuildId, queryClient]
   );
 
+  const lookup = useCallback(async (code: string) => {
+    setLooking(true);
+    setDevice(null);
+    setNotFoundCode(null);
+    setAddedToCart(false);
+    try {
+      const { data } = await api.get<ScannedDevice>('/api/devices/lookup', { params: { code } });
+      setDevice(data);
+      setLookupActive(false);
+    } catch {
+      setNotFoundCode(code);
+      setLookupActive(false);
+    } finally {
+      setLooking(false);
+    }
+  }, []);
+
+  const handleLookupScan = useCallback(
+    async (code: string) => {
+      if (looking) return;
+      await lookup(code.trim());
+    },
+    [looking, lookup]
+  );
+
   const addDeviceToEvent = async (eventId: string) => {
     if (!device) return;
     setAddingToEvent(true);
@@ -219,245 +201,25 @@ export default function Scanner() {
     }
   };
 
-  const scannerRef = useRef<Html5Qrcode | null>(null);
-  const isStartingRef = useRef(false);
-  const lastScanRef = useRef<{ code: string; at: number } | null>(null);
-  const camerasRef = useRef<CameraOption[]>([]);
-  const selectedCameraIdRef = useRef<string | null>(null);
-
-  const [scanning, setScanning] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const [looking, setLooking] = useState(false);
-  const [device, setDevice] = useState<ScannedDevice | null>(null);
-  const [notFoundCode, setNotFoundCode] = useState<string | null>(null);
-  const [updatingStatus, setUpdatingStatus] = useState(false);
-  const [cameras, setCameras] = useState<CameraOption[]>([]);
-  const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
-  const [addedToCart, setAddedToCart] = useState(false);
-  const [torchOn, setTorchOn] = useState(false);
-  const [torchSupported, setTorchSupported] = useState(false);
-  const [torchCameraIds, setTorchCameraIds] = useState<Set<string>>(() => new Set());
-
-  camerasRef.current = cameras;
-  selectedCameraIdRef.current = selectedCameraId;
-
-  const secureContext =
-    typeof window !== 'undefined' &&
-    (window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
-
-  const stopCamera = useCallback(async () => {
-    const track = getVideoTrackFromReader(READER_ID);
-    if (track) await setTrackTorch(track, false);
-    const inst = scannerRef.current;
-    if (!inst) {
-      setScanning(false);
-      setTorchOn(false);
-      setTorchSupported(false);
-      return;
-    }
-    try {
-      if (inst.isScanning) await inst.stop();
-      inst.clear();
-    } catch {
-      /* ignore */
-    }
-    scannerRef.current = null;
-    setScanning(false);
-    setTorchOn(false);
-    setTorchSupported(false);
-  }, []);
-
-  const lookup = useCallback(async (code: string) => {
-    setLooking(true);
-    setDevice(null);
-    setNotFoundCode(null);
-    try {
-      const { data } = await api.get<ScannedDevice>('/api/devices/lookup', { params: { code } });
-      setDevice(data);
-    } catch {
-      setNotFoundCode(code);
-    } finally {
-      setLooking(false);
-    }
-  }, []);
-
-  const handleScan = useCallback(
-    async (decodedText: string) => {
-      const code = decodedText.trim();
-      if (!code) return;
-
-      const now = Date.now();
-      const prev = lastScanRef.current;
-      if (prev && prev.code === code && now - prev.at < 1200) return;
-      lastScanRef.current = { code, at: now };
-
-      await stopCamera();
-      await lookup(code);
-    },
-    [stopCamera, lookup]
-  );
-
-  const startCamera = useCallback(
-    async (cameraId?: string) => {
-      const alreadyRunning = scannerRef.current !== null;
-      if (isStartingRef.current || alreadyRunning) return;
-      if (!secureContext) {
-        setCameraError(
-          'La cámara requiere una conexión segura (HTTPS) o localhost. Abre la app por HTTPS para escanear desde el celular.'
-        );
-        return;
-      }
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setCameraError('Este navegador no permite acceder a la cámara.');
-        return;
-      }
-      setCameraError(null);
-      setDevice(null);
-      setNotFoundCode(null);
-      lastScanRef.current = null;
-      isStartingRef.current = true;
-
-      try {
-        let cams = camerasRef.current;
-        if (!cams.length) {
-          try {
-            const found = await Html5Qrcode.getCameras();
-            cams = found.map((c) => ({ id: c.id, label: c.label || 'Cámara' }));
-            camerasRef.current = cams;
-            setCameras(cams);
-          } catch {
-            cams = [];
-          }
-        }
-        const apple = isAppleMobile();
-        const camId = cameraId ?? selectedCameraIdRef.current ?? pickPreferredScanCamera(cams);
-        if (camId) {
-          selectedCameraIdRef.current = camId;
-          setSelectedCameraId(camId);
-        }
-
-        const html5 = new Html5Qrcode(READER_ID, {
-          verbose: false,
-          formatsToSupport: BARCODE_FORMATS,
-          // iOS: BarcodeDetector nativo falla mucho con CODE128 — usar motor JS
-          experimentalFeatures: { useBarCodeDetectorIfSupported: !apple },
-        });
-        scannerRef.current = html5;
-
-        const cameraSource: string | MediaTrackConstraints =
-          apple && !cameraId
-            ? { facingMode: { ideal: 'environment' } }
-            : apple && cameraId
-              ? cameraId
-              : camId ?? { facingMode: { ideal: 'environment' } };
-
-        const videoConstraints: MediaTrackConstraints = apple
-          ? { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
-          : camId
-            ? { deviceId: { exact: camId }, ...VIDEO_CONSTRAINTS_BASE }
-            : { facingMode: { ideal: 'environment' }, ...VIDEO_CONSTRAINTS_BASE };
-
-        await html5.start(
-          cameraSource,
-          {
-            fps: apple ? 12 : 30,
-            qrbox: barcodeScanBox,
-            disableFlip: false,
-            videoConstraints,
-          },
-          (decodedText) => {
-            void handleScan(decodedText);
-          },
-          () => {
-            /* fallo de lectura por frame: ignorar */
-          }
-        );
-
-        hardenVideoForIOS(READER_ID);
-        window.setTimeout(() => {
-          hardenVideoForIOS(READER_ID);
-          void applyScanFocusHints(READER_ID);
-        }, apple ? 600 : 300);
-
-        setScanning(true);
-        setTorchOn(false);
-
-        const hasTorch = await waitForTorchSupport(READER_ID);
-        setTorchSupported(hasTorch);
-        if (hasTorch && camId) {
-          setTorchCameraIds((prev) => {
-            if (prev.has(camId)) return prev;
-            const next = new Set(prev);
-            next.add(camId);
-            return next;
-          });
-        }
-      } catch (err) {
-        scannerRef.current = null;
-        const msg = err instanceof Error ? err.message : String(err);
-        setCameraError(
-          /permission|denied|notallowed/i.test(msg)
-            ? 'Permiso de cámara denegado. Habilítalo en los ajustes del navegador.'
-            : /notfound|no.*camera|requested device/i.test(msg)
-              ? 'No se encontró ninguna cámara conectada.'
-              : 'No se pudo iniciar la cámara: ' + msg
-        );
-      } finally {
-        isStartingRef.current = false;
-      }
-    },
-    [secureContext, handleScan]
-  );
-
-  const toggleTorch = async () => {
-    const track = getVideoTrackFromReader(READER_ID);
-    if (!trackSupportsTorch(track) || !track) {
-      setTorchSupported(false);
-      return;
-    }
-    const next = !torchOn;
-    const ok = await setTrackTorch(track, next);
-    if (ok) setTorchOn(next);
-  };
-
-  const switchCamera = useCallback(
-    async (id: string) => {
-      await stopCamera();
-      await startCamera(id);
-    },
-    [stopCamera, startCamera]
-  );
-
-  useEffect(() => {
-    if (mode === 'event') {
-      void stopCamera();
-    }
-  }, [mode, stopCamera]);
-
-  useEffect(() => {
-    return () => {
-      void stopCamera();
-    };
-  }, [stopCamera]);
-
-  useEffect(() => {
-    setAddedToCart(device ? getStoredCart().some((d) => d.id === device.id) : false);
-  }, [device]);
-
   const addToCart = () => {
     if (!device) return;
+    const cart = getStoredCart();
+    if (cart.some((d) => d.id === device.id)) {
+      setAddedToCart(true);
+      toast('Ya está en el carrito');
+      return;
+    }
     addToStoredCart({ id: device.id, internalCode: device.internalCode, name: device.name });
     setAddedToCart(true);
     toast.success('Agregado al carrito de traslado. Ve a Movimientos para continuar.');
   };
 
-  const reset = useCallback(async () => {
+  const reset = () => {
     setDevice(null);
     setNotFoundCode(null);
-    setCameraError(null);
-    lastScanRef.current = null;
-    await startCamera();
-  }, [startCamera]);
+    setAddedToCart(false);
+    setLookupActive(true);
+  };
 
   const changeStatus = async (status: string) => {
     if (!device) return;
@@ -582,300 +344,204 @@ export default function Scanner() {
       )}
 
       {mode === 'lookup' && (
-      <>
-      <div className="bg-card rounded-xl border border-border overflow-hidden">
-        <div className="relative bg-black min-h-[min(68vh,560px)] h-[min(68vh,560px)] flex items-center justify-center overflow-hidden">
-          <div
-            id={READER_ID}
-            className={cn(
-              'absolute inset-0 w-full h-full',
-              '[&_video]:!absolute [&_video]:!inset-0 [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover [&_video]:!max-w-none',
-              '[&_img]:hidden',
-              '[&_#qr-shaded-region]:!hidden [&_[id*="qr-shaded-region"]]:!hidden',
-              '[&_canvas]:!absolute [&_canvas]:!opacity-0 [&_canvas]:!pointer-events-none'
-            )}
-          />
-          {scanning && (
-            <div className="absolute inset-0 z-10 pointer-events-none flex flex-col items-center justify-center px-4">
-              <p className="mb-5 max-w-[20rem] text-center text-[15px] leading-snug font-medium text-white drop-shadow-md">
-                Por favor ubica el código de barras del producto dentro de la zona de escáner
-              </p>
-              <div className="relative w-[min(92%,360px)] h-[min(22vh,140px)] rounded-2xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]">
-                <span className="absolute -top-0.5 -left-0.5 h-5 w-5 border-t-[3px] border-l-[3px] border-white rounded-tl-xl" />
-                <span className="absolute -top-0.5 -right-0.5 h-5 w-5 border-t-[3px] border-r-[3px] border-white rounded-tr-xl" />
-                <span className="absolute -bottom-0.5 -left-0.5 h-5 w-5 border-b-[3px] border-l-[3px] border-white rounded-bl-xl" />
-                <span className="absolute -bottom-0.5 -right-0.5 h-5 w-5 border-b-[3px] border-r-[3px] border-white rounded-br-xl" />
-                <span className="absolute left-3 right-3 top-1/2 -translate-y-1/2 h-0.5 rounded-full bg-red-500/80" />
-              </div>
-            </div>
-          )}
-          {!scanning && !looking && !device && !notFoundCode && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 p-6 text-center">
-              {cameraError ? (
-                <>
-                  <CameraOff className="h-12 w-12 text-red-400" />
-                  <p className="text-sm text-red-300 max-w-sm">{cameraError}</p>
-                  <Button onClick={() => startCamera()} variant="outline" className="min-h-touch">
-                    <Camera className="h-4 w-4 mr-2" /> Reintentar
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Camera className="h-14 w-14 text-muted" />
-                  <Button onClick={() => startCamera()} className="min-h-touch">
-                    <Camera className="h-5 w-5 mr-2" /> Iniciar cámara
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
-          {looking && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/70">
-              <Loader2 className="h-10 w-10 text-primary animate-spin" />
-              <p className="text-sm text-foreground">Buscando equipo...</p>
-            </div>
-          )}
-          {device && !scanning && !looking && (
-            <div className="absolute inset-0 z-20 bg-card-hover">
-              {device.images?.[0]?.url ? (
-                <img
-                  src={device.images[0].url}
-                  alt={device.name}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="h-full w-full flex flex-col items-center justify-center gap-3 bg-black/80">
-                  <Package className="h-16 w-16 text-muted" />
-                  <p className="text-sm text-muted">Sin imagen del equipo</p>
+        <>
+          {(lookupActive || looking) && (
+            <div className="relative">
+              <BarcodeScanner
+                readerId="lookup-scanner"
+                active={lookupActive && !looking}
+                onScan={handleLookupScan}
+                sameCodeCooldownMs={1200}
+              />
+              {looking && (
+                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-xl bg-black/70">
+                  <Loader2 className="h-10 w-10 text-primary animate-spin" />
+                  <p className="text-sm text-foreground">Buscando equipo...</p>
                 </div>
               )}
             </div>
           )}
-          {notFoundCode && !scanning && !looking && !device && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/80 p-6 text-center">
-              <AlertTriangle className="h-12 w-12 text-amber-400" />
-              <p className="text-sm text-foreground">Equipo no encontrado</p>
-            </div>
-          )}
-          {scanning && (
-            <div className="absolute bottom-3 left-0 right-0 z-20 flex flex-wrap items-center justify-center gap-2 px-3">
-              {torchSupported && (
-                <Button
-                  type="button"
-                  variant={torchOn ? 'default' : 'secondary'}
-                  size="sm"
-                  onClick={() => void toggleTorch()}
-                  className="min-h-touch bg-black/55 text-white border-white/20 hover:bg-black/70"
-                  aria-pressed={torchOn}
-                  aria-label={torchOn ? 'Apagar flash' : 'Encender flash'}
-                >
-                  {torchOn ? <Flashlight className="h-4 w-4 mr-2" /> : <FlashlightOff className="h-4 w-4 mr-2" />}
-                  {torchOn ? 'Apagar flash' : 'Flash'}
-                </Button>
-              )}
-              {cameras.length > 1 && (
-                <div className="relative flex items-center">
-                  <SwitchCamera className="absolute left-2.5 h-4 w-4 text-white/80 pointer-events-none" />
-                  <select
-                    value={selectedCameraId ?? ''}
-                    onChange={(e) => switchCamera(e.target.value)}
-                    className="h-9 pl-8 pr-3 rounded-md bg-black/55 border border-white/20 text-sm text-white max-w-[200px] truncate"
-                    aria-label="Seleccionar cámara"
-                  >
-                    {cameras.map((c, i) => (
-                      <option key={c.id} value={c.id} className="text-foreground">
-                        {(c.label || `Cámara ${i + 1}`) + (torchCameraIds.has(c.id) ? ' · flash' : '')}
-                      </option>
+
+          {device && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-card rounded-xl border border-border overflow-hidden"
+            >
+              <div className="relative h-40 bg-card-hover">
+                {device.images?.[0]?.url ? (
+                  <img src={device.images[0].url} alt={device.name} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="h-full w-full flex flex-col items-center justify-center gap-2 bg-black/40">
+                    <Package className="h-12 w-12 text-muted" />
+                    <p className="text-sm text-muted">Sin imagen del equipo</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-start gap-4 p-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={cn('px-2.5 py-1 rounded-full text-xs font-medium', STATUS_BADGE[device.status] ?? 'bg-muted')}>
+                      {deviceStatusLabel(device.status)}
+                    </span>
+                    <span className="font-mono text-xs text-primary">{device.internalCode}</span>
+                  </div>
+                  <h2 className="font-display font-semibold text-lg mt-1 truncate">{device.name}</h2>
+                  <p className="text-sm text-muted truncate">
+                    {device.brand} {device.model}
+                    {device.category?.name ? ` · ${device.category.name}` : ''}
+                  </p>
+                </div>
+              </div>
+
+              <dl className="grid grid-cols-2 gap-px bg-border">
+                <div className="bg-card p-3">
+                  <dt className="text-xs text-muted">Número de serie</dt>
+                  <dd className="text-sm font-medium truncate">{device.serialNumber || '—'}</dd>
+                </div>
+                <div className="bg-card p-3">
+                  <dt className="text-xs text-muted">Ubicación</dt>
+                  <dd className="text-sm font-medium truncate">{locationLabel(device.location)}</dd>
+                </div>
+                <div className="bg-card p-3 col-span-2">
+                  <dt className="text-xs text-muted">Condición</dt>
+                  <dd className="flex items-center gap-2 mt-1">
+                    <div className="flex-1 h-2 bg-card-hover rounded-full overflow-hidden">
+                      <div
+                        className={cn(
+                          'h-full rounded-full',
+                          device.condition >= 70 ? 'bg-green-500' : device.condition >= 40 ? 'bg-amber-500' : 'bg-red-500'
+                        )}
+                        style={{ width: `${device.condition}%` }}
+                      />
+                    </div>
+                    <span className="text-sm font-medium">{device.condition}%</span>
+                  </dd>
+                </div>
+                {device.observation && (
+                  <div className="bg-card p-3 col-span-2">
+                    <dt className="text-xs text-muted">Observación / Novedad</dt>
+                    <dd className="text-sm mt-1 px-3 py-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                      {device.observation}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+
+              {canEdit && (
+                <div className="p-4 border-t border-border">
+                  <p className="text-xs text-muted mb-2">Cambiar estado</p>
+                  <div className="flex flex-wrap gap-2">
+                    {QUICK_STATUSES.map((s) => (
+                      <Button
+                        key={s.value}
+                        variant="outline"
+                        size="sm"
+                        disabled={updatingStatus || device.status === s.value}
+                        onClick={() => changeStatus(s.value)}
+                        className={cn('min-h-touch', s.className, device.status === s.value && 'opacity-50')}
+                      >
+                        {device.status === s.value && <CheckCircle2 className="h-4 w-4 mr-1.5" />}
+                        {s.label}
+                      </Button>
                     ))}
-                  </select>
+                  </div>
                 </div>
               )}
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={stopCamera}
-                className="min-h-touch bg-black/55 text-white border-white/20 hover:bg-black/70"
-              >
-                <CameraOff className="h-4 w-4 mr-2" /> Detener
-              </Button>
-            </div>
-          )}
-        </div>
-      </div>
 
-      {device && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-card rounded-xl border border-border overflow-hidden"
-        >
-          <div className="flex items-start gap-4 p-4">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={cn('px-2.5 py-1 rounded-full text-xs font-medium', STATUS_BADGE[device.status] ?? 'bg-muted')}>
-                  {deviceStatusLabel(device.status)}
-                </span>
-                <span className="font-mono text-xs text-primary">{device.internalCode}</span>
-              </div>
-              <h2 className="font-display font-semibold text-lg mt-1 truncate">{device.name}</h2>
-              <p className="text-sm text-muted truncate">
-                {device.brand} {device.model}
-                {device.category?.name ? ` · ${device.category.name}` : ''}
-              </p>
-            </div>
-          </div>
-
-          <dl className="grid grid-cols-2 gap-px bg-border">
-            <div className="bg-card p-3">
-              <dt className="text-xs text-muted">Número de serie</dt>
-              <dd className="text-sm font-medium truncate">{device.serialNumber || '—'}</dd>
-            </div>
-            <div className="bg-card p-3">
-              <dt className="text-xs text-muted">Ubicación</dt>
-              <dd className="text-sm font-medium truncate">{locationLabel(device.location)}</dd>
-            </div>
-            <div className="bg-card p-3 col-span-2">
-              <dt className="text-xs text-muted">Condición</dt>
-              <dd className="flex items-center gap-2 mt-1">
-                <div className="flex-1 h-2 bg-card-hover rounded-full overflow-hidden">
-                  <div
-                    className={cn(
-                      'h-full rounded-full',
-                      device.condition >= 70 ? 'bg-green-500' : device.condition >= 40 ? 'bg-amber-500' : 'bg-red-500'
-                    )}
-                    style={{ width: `${device.condition}%` }}
-                  />
-                </div>
-                <span className="text-sm font-medium">{device.condition}%</span>
-              </dd>
-            </div>
-            {device.observation && (
-              <div className="bg-card p-3 col-span-2">
-                <dt className="text-xs text-muted">Observación / Novedad</dt>
-                <dd className="text-sm mt-1 px-3 py-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30">
-                  {device.observation}
-                </dd>
-              </div>
-            )}
-          </dl>
-
-          {canEdit && (
-            <div className="p-4 border-t border-border">
-              <p className="text-xs text-muted mb-2">Cambiar estado</p>
-              <div className="flex flex-wrap gap-2">
-                {QUICK_STATUSES.map((s) => (
-                  <Button
-                    key={s.value}
-                    variant="outline"
-                    size="sm"
-                    disabled={updatingStatus || device.status === s.value}
-                    onClick={() => changeStatus(s.value)}
-                    className={cn('min-h-touch', s.className, device.status === s.value && 'opacity-50')}
-                  >
-                    {device.status === s.value && <CheckCircle2 className="h-4 w-4 mr-1.5" />}
-                    {s.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="p-4 border-t border-border space-y-2">
-            {canEvent && draftEvents.length > 0 && (
-              <div className="flex gap-2">
-                <select
-                  value={selectedEventForDevice}
-                  onChange={(e) => setSelectedEventForDevice(e.target.value)}
-                  className="flex-1 h-10 px-3 rounded-md bg-background border border-border text-sm min-w-0"
-                >
-                  {draftEvents.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.name}
-                    </option>
-                  ))}
-                </select>
+              <div className="p-4 border-t border-border space-y-2">
+                {canEvent && draftEvents.length > 0 && (
+                  <div className="flex gap-2">
+                    <select
+                      value={selectedEventForDevice}
+                      onChange={(e) => setSelectedEventForDevice(e.target.value)}
+                      className="flex-1 h-10 px-3 rounded-md bg-background border border-border text-sm min-w-0"
+                    >
+                      {draftEvents.map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {e.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      variant="outline"
+                      className="min-h-touch shrink-0"
+                      disabled={addingToEvent || !selectedEventForDevice}
+                      onClick={() => addDeviceToEvent(selectedEventForDevice)}
+                    >
+                      {addingToEvent ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <ListPlus className="h-4 w-4 mr-1" /> Agregar a evento
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
                 <Button
-                  variant="outline"
-                  className="min-h-touch shrink-0"
-                  disabled={addingToEvent || !selectedEventForDevice}
-                  onClick={() => addDeviceToEvent(selectedEventForDevice)}
+                  variant={addedToCart ? 'outline' : 'default'}
+                  className="w-full min-h-touch"
+                  disabled={addedToCart}
+                  onClick={addToCart}
                 >
-                  {addingToEvent ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                  {addedToCart ? (
+                    <>
+                      <Check className="h-4 w-4 mr-2" /> Ya está en el carrito
+                    </>
                   ) : (
                     <>
-                      <ListPlus className="h-4 w-4 mr-1" /> Agregar a evento
+                      <Truck className="h-4 w-4 mr-2" /> Agregar al carrito de traslado
                     </>
                   )}
                 </Button>
               </div>
-            )}
-            <Button
-              variant={addedToCart ? 'outline' : 'default'}
-              className="w-full min-h-touch"
-              disabled={addedToCart}
-              onClick={addToCart}
-            >
-              {addedToCart ? (
-                <>
-                  <Check className="h-4 w-4 mr-2" /> Ya está en el carrito
-                </>
-              ) : (
-                <>
-                  <Truck className="h-4 w-4 mr-2" /> Agregar al carrito de traslado
-                </>
-              )}
-            </Button>
-          </div>
 
-          <div className="p-4 border-t border-border flex flex-col sm:flex-row gap-2">
-            <Button className="flex-1 min-h-touch" onClick={() => navigate(`/inventory/${device.id}`)}>
-              <ArrowRight className="h-4 w-4 mr-2" /> Ver ficha completa
-            </Button>
-            {canEdit && (
-              <Button
-                variant="outline"
-                className="flex-1 min-h-touch"
-                onClick={() => navigate(`/inventory/${device.id}`)}
-              >
-                <Pencil className="h-4 w-4 mr-2" /> Editar
-              </Button>
-            )}
-            <Button variant="ghost" className="min-h-touch" onClick={reset}>
-              <RotateCcw className="h-4 w-4 mr-2" /> Escanear otro
-            </Button>
-          </div>
-        </motion.div>
-      )}
+              <div className="p-4 border-t border-border flex flex-col sm:flex-row gap-2">
+                <Button className="flex-1 min-h-touch" onClick={() => navigate(`/inventory/${device.id}`)}>
+                  <ArrowRight className="h-4 w-4 mr-2" /> Ver ficha completa
+                </Button>
+                {canEdit && (
+                  <Button variant="outline" className="flex-1 min-h-touch" onClick={() => navigate(`/inventory/${device.id}`)}>
+                    <Pencil className="h-4 w-4 mr-2" /> Editar
+                  </Button>
+                )}
+                <Button variant="ghost" className="min-h-touch" onClick={reset}>
+                  <RotateCcw className="h-4 w-4 mr-2" /> Escanear otro
+                </Button>
+              </div>
+            </motion.div>
+          )}
 
-      {notFoundCode && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-card rounded-xl border border-amber-500/40 p-5 text-center space-y-3"
-        >
-          <AlertTriangle className="h-10 w-10 text-amber-400 mx-auto" />
-          <div>
-            <p className="font-medium">No se encontró ningún equipo</p>
-            <p className="text-sm text-muted mt-1">
-              Código leído: <span className="font-mono text-foreground break-all">{notFoundCode}</span>
-            </p>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2 justify-center">
-            <Button onClick={reset} className="min-h-touch">
-              <RotateCcw className="h-4 w-4 mr-2" /> Escanear de nuevo
-            </Button>
-            <Button
-              variant="outline"
-              className="min-h-touch"
-              onClick={() => navigate(`/inventory?search=${encodeURIComponent(notFoundCode)}`)}
+          {notFoundCode && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-card rounded-xl border border-amber-500/40 p-5 text-center space-y-3"
             >
-              Buscar en inventario
-            </Button>
-          </div>
-        </motion.div>
-      )}
-      </>
+              <AlertTriangle className="h-10 w-10 text-amber-400 mx-auto" />
+              <div>
+                <p className="font-medium">No se encontró ningún equipo</p>
+                <p className="text-sm text-muted mt-1">
+                  Código leído: <span className="font-mono text-foreground break-all">{notFoundCode}</span>
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2 justify-center">
+                <Button onClick={reset} className="min-h-touch">
+                  <RotateCcw className="h-4 w-4 mr-2" /> Escanear de nuevo
+                </Button>
+                <Button
+                  variant="outline"
+                  className="min-h-touch"
+                  onClick={() => navigate(`/inventory?search=${encodeURIComponent(notFoundCode)}`)}
+                >
+                  Buscar en inventario
+                </Button>
+              </div>
+            </motion.div>
+          )}
+        </>
       )}
     </motion.div>
   );

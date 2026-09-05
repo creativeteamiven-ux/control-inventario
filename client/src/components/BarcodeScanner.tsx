@@ -1,74 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Camera, CameraOff, Flashlight, FlashlightOff, Loader2, SwitchCamera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { getBarcodeDetector, scanSourceFromVideo, scanVideoConstraints } from '@/lib/barcodeEngine';
 import {
-  applyScanFocusHints,
-  getVideoTrackFromReader,
-  hardenVideoForIOS,
   isAppleMobile,
   pickPreferredScanCamera,
   setTrackTorch,
   trackSupportsTorch,
-  waitForTorchSupport,
 } from '@/lib/cameraTorch';
 import { cn } from '@/lib/utils';
-
-const BARCODE_FORMATS = [
-  Html5QrcodeSupportedFormats.CODE_128,
-  Html5QrcodeSupportedFormats.CODE_39,
-  Html5QrcodeSupportedFormats.EAN_13,
-  Html5QrcodeSupportedFormats.EAN_8,
-  Html5QrcodeSupportedFormats.UPC_A,
-  Html5QrcodeSupportedFormats.UPC_E,
-  Html5QrcodeSupportedFormats.ITF,
-  Html5QrcodeSupportedFormats.CODABAR,
-];
-
-/**
- * Ventana de lectura.
- * En iOS el decodificador JS es más lento/impreciso: zona un poco más alta ayuda al enfoque.
- */
-function barcodeScanBox(viewW: number, viewH: number) {
-  const apple = isAppleMobile();
-  const width = Math.floor(Math.min(viewW * (apple ? 0.92 : 0.88), viewW - 16));
-  const height = Math.floor(
-    Math.min(Math.max(viewH * (apple ? 0.22 : 0.16), apple ? 110 : 96), apple ? 160 : 132)
-  );
-  return { width, height };
-}
-
-function videoConstraintsFor(camId: string | undefined, apple: boolean): MediaTrackConstraints {
-  // iOS: facingMode es más fiable que deviceId exact; resolución ideal más baja = menos carga al ZXing JS
-  if (apple) {
-    return {
-      facingMode: { ideal: 'environment' },
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-    };
-  }
-  if (camId) {
-    return {
-      deviceId: { exact: camId },
-      width: { min: 640, ideal: 1280 },
-      height: { min: 480, ideal: 720 },
-    };
-  }
-  return {
-    facingMode: { ideal: 'environment' },
-    width: { min: 640, ideal: 1280 },
-    height: { min: 480, ideal: 720 },
-  };
-}
 
 interface BarcodeScannerProps {
   readerId: string;
   active: boolean;
   onScan: (code: string) => void | Promise<void>;
   className?: string;
-  /** Evita reenviar el mismo código durante este tiempo (ms). Default 650. */
   sameCodeCooldownMs?: number;
-  /** Pausa mínima entre dos códigos distintos (ms). Default 180. */
   betweenCodesMs?: number;
   hint?: string;
 }
@@ -82,14 +29,17 @@ export default function BarcodeScanner({
   betweenCodesMs = 180,
   hint = 'Por favor ubica el código de barras del producto dentro de la zona de escáner',
 }: BarcodeScannerProps) {
-  const scannerRef = useRef<Html5Qrcode | null>(null);
-  const isStartingRef = useRef(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const busyRef = useRef(false);
   const lastScanRef = useRef<{ code: string; at: number } | null>(null);
   const onScanRef = useRef(onScan);
   const cooldownRef = useRef(sameCodeCooldownMs);
   const betweenRef = useRef(betweenCodesMs);
-  const camerasRef = useRef<{ id: string; label: string }[]>([]);
-  const selectedCameraIdRef = useRef<string | null>(null);
+  const aliveRef = useRef(false);
+
   onScanRef.current = onScan;
   cooldownRef.current = sameCodeCooldownMs;
   betweenRef.current = betweenCodesMs;
@@ -100,150 +50,207 @@ export default function BarcodeScanner({
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
   const [torchOn, setTorchOn] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
-  const [torchCameraIds, setTorchCameraIds] = useState<Set<string>>(() => new Set());
   const [flashOk, setFlashOk] = useState(false);
-
-  camerasRef.current = cameras;
-  selectedCameraIdRef.current = selectedCameraId;
+  // iOS exige gesto del usuario para getUserMedia: no auto-iniciar en la primera carga
+  const [iosArmed, setIosArmed] = useState(() => !isAppleMobile());
 
   const secureContext =
     typeof window !== 'undefined' &&
     (window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1');
 
+  const stopLoop = useCallback(() => {
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+  }, []);
+
   const stopCamera = useCallback(async () => {
-    const track = getVideoTrackFromReader(readerId);
-    if (track) await setTrackTorch(track, false);
-    const inst = scannerRef.current;
-    if (!inst) {
-      setScanning(false);
-      setTorchOn(false);
-      setTorchSupported(false);
-      return;
+    aliveRef.current = false;
+    stopLoop();
+    busyRef.current = false;
+    const stream = streamRef.current;
+    streamRef.current = null;
+    if (stream) {
+      for (const t of stream.getTracks()) {
+        try {
+          t.stop();
+        } catch {
+          /* ignore */
+        }
+      }
     }
-    try {
-      if (inst.isScanning) await inst.stop();
-      inst.clear();
-    } catch {
-      /* ignore */
+    const video = videoRef.current;
+    if (video) {
+      video.srcObject = null;
     }
-    scannerRef.current = null;
     setScanning(false);
     setTorchOn(false);
     setTorchSupported(false);
-  }, [readerId]);
+  }, [stopLoop]);
+
+  const emitCode = useCallback((raw: string) => {
+    const code = raw.trim();
+    if (!code) return;
+    const now = Date.now();
+    const prev = lastScanRef.current;
+    if (prev) {
+      const gap = now - prev.at;
+      if (prev.code === code && gap < cooldownRef.current) return;
+      if (prev.code !== code && gap < betweenRef.current) return;
+    }
+    lastScanRef.current = { code, at: now };
+    setFlashOk(true);
+    window.setTimeout(() => setFlashOk(false), 280);
+    void onScanRef.current(code);
+  }, []);
+
+  const startLoop = useCallback(async () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+
+    let detector;
+    try {
+      detector = await getBarcodeDetector();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setCameraError(`No se pudo cargar el lector: ${msg}`);
+      return;
+    }
+
+    const apple = isAppleMobile();
+    // iOS: ~8–10 fps de decode (ZBar WASM). Android nativo puede ir más rápido.
+    const minGapMs = apple ? 120 : 50;
+    let lastAttempt = 0;
+
+    const tick = async (ts: number) => {
+      if (!aliveRef.current) return;
+      rafRef.current = requestAnimationFrame(tick);
+
+      if (busyRef.current) return;
+      if (ts - lastAttempt < minGapMs) return;
+      if (video.readyState < 2 || video.paused) return;
+
+      lastAttempt = ts;
+      busyRef.current = true;
+      try {
+        const source = scanSourceFromVideo(video, canvas);
+        if (!source) return;
+        const codes = await detector.detect(source);
+        if (codes?.length) {
+          emitCode(codes[0].rawValue);
+        }
+      } catch {
+        /* frame fallido: seguir */
+      } finally {
+        busyRef.current = false;
+      }
+    };
+
+    rafRef.current = requestAnimationFrame(tick);
+  }, [emitCode]);
 
   const startCamera = useCallback(
     async (cameraId?: string) => {
-      const alreadyRunning = scannerRef.current !== null;
-      if (isStartingRef.current || alreadyRunning || !active) return;
-      if (!secureContext) {
-        setCameraError('La cámara requiere HTTPS o localhost.');
+      if (!active || !secureContext) {
+        if (!secureContext) setCameraError('La cámara requiere HTTPS o localhost.');
         return;
       }
+      await stopCamera();
+      aliveRef.current = true;
       setCameraError(null);
       lastScanRef.current = null;
-      isStartingRef.current = true;
-      const apple = isAppleMobile();
+
       try {
-        let cams = camerasRef.current;
-        if (!cams.length) {
+        let cams = cameras;
+        if (!cams.length && navigator.mediaDevices?.enumerateDevices) {
           try {
-            const found = await Html5Qrcode.getCameras();
-            cams = found.map((c) => ({ id: c.id, label: c.label || 'Cámara' }));
-            camerasRef.current = cams;
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            cams = devices
+              .filter((d) => d.kind === 'videoinput')
+              .map((d, i) => ({ id: d.deviceId, label: d.label || `Cámara ${i + 1}` }));
             setCameras(cams);
           } catch {
             cams = [];
           }
         }
-        const camId = cameraId ?? selectedCameraIdRef.current ?? pickPreferredScanCamera(cams);
-        if (camId) {
-          selectedCameraIdRef.current = camId;
-          setSelectedCameraId(camId);
-        }
 
-        // En iOS el BarcodeDetector nativo falla mucho con CODE128/39: mejor el motor JS de html5-qrcode.
-        // En Android Chrome el BarcodeDetector es excelente.
-        const html5 = new Html5Qrcode(readerId, {
-          verbose: false,
-          formatsToSupport: BARCODE_FORMATS,
-          experimentalFeatures: { useBarCodeDetectorIfSupported: !apple },
-        });
-        scannerRef.current = html5;
+        const apple = isAppleMobile();
+        const preferred = cameraId ?? selectedCameraId ?? pickPreferredScanCamera(cams);
+        if (preferred) setSelectedCameraId(preferred);
 
-        const constraints = videoConstraintsFor(
-          apple && !cameraId ? undefined : camId ?? undefined,
-          apple
-        );
+        const base = scanVideoConstraints();
+        const constraints: MediaStreamConstraints = {
+          audio: false,
+          video:
+            apple || !preferred
+              ? base
+              : { ...base, deviceId: { exact: preferred } },
+        };
 
-        // iOS: preferir facingMode como fuente de cámara (deviceId exact suele fallar o elegir ultrawide)
-        const cameraSource: string | MediaTrackConstraints =
-          apple && !cameraId
-            ? { facingMode: { ideal: 'environment' } }
-            : apple && cameraId
-              ? cameraId
-              : camId ?? { facingMode: { ideal: 'environment' } };
-
-        await html5.start(
-          cameraSource,
-          {
-            // iOS: menos fps = más tiempo por frame para el decodificador JS
-            fps: apple ? 12 : 30,
-            qrbox: barcodeScanBox,
-            disableFlip: false,
-            videoConstraints: constraints,
-          },
-          (decodedText) => {
-            const code = decodedText.trim();
-            if (!code) return;
-            const now = Date.now();
-            const prev = lastScanRef.current;
-            if (prev) {
-              const gap = now - prev.at;
-              if (prev.code === code && gap < cooldownRef.current) return;
-              if (prev.code !== code && gap < betweenRef.current) return;
-            }
-            lastScanRef.current = { code, at: now };
-            setFlashOk(true);
-            window.setTimeout(() => setFlashOk(false), 280);
-            void onScanRef.current(code);
-          },
-          () => {}
-        );
-
-        hardenVideoForIOS(readerId);
-        // Pequeña espera para que el track esté listo antes de pedir foco
-        window.setTimeout(() => {
-          hardenVideoForIOS(readerId);
-          void applyScanFocusHints(readerId);
-        }, apple ? 600 : 300);
-
-        setScanning(true);
-        setTorchOn(false);
-
-        const hasTorch = await waitForTorchSupport(readerId);
-        setTorchSupported(hasTorch);
-        if (hasTorch && camId) {
-          setTorchCameraIds((prev) => {
-            if (prev.has(camId)) return prev;
-            const next = new Set(prev);
-            next.add(camId);
-            return next;
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch {
+          // Fallback duro para iOS si ideal falla
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: { facingMode: 'environment' },
           });
         }
+
+        if (!aliveRef.current) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (!video) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        video.setAttribute('playsinline', 'true');
+        video.setAttribute('webkit-playsinline', 'true');
+        video.muted = true;
+        video.playsInline = true;
+        video.srcObject = stream;
+        await video.play();
+
+        // Re-enumerar tras permiso (iOS da labels)
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const listed = devices
+            .filter((d) => d.kind === 'videoinput')
+            .map((d, i) => ({ id: d.deviceId, label: d.label || `Cámara ${i + 1}` }));
+          if (listed.length) setCameras(listed);
+        } catch {
+          /* ignore */
+        }
+
+        const track = stream.getVideoTracks()[0] ?? null;
+        setTorchSupported(trackSupportsTorch(track));
+        setTorchOn(false);
+        setScanning(true);
+        await startLoop();
       } catch (err) {
-        scannerRef.current = null;
+        aliveRef.current = false;
         const msg = err instanceof Error ? err.message : String(err);
-        setCameraError(/permission|denied/i.test(msg) ? 'Permiso de cámara denegado.' : 'No se pudo iniciar la cámara.');
-      } finally {
-        isStartingRef.current = false;
+        setCameraError(
+          /permission|denied|notallowed/i.test(msg)
+            ? 'Permiso de cámara denegado. Actívalo en Ajustes → Safari.'
+            : 'No se pudo iniciar la cámara en este dispositivo.'
+        );
+        setScanning(false);
       }
     },
-    [active, secureContext, readerId]
+    [active, secureContext, stopCamera, cameras, selectedCameraId, startLoop]
   );
 
   const toggleTorch = async () => {
-    const track = getVideoTrackFromReader(readerId);
+    const track = streamRef.current?.getVideoTracks()[0] ?? null;
     if (!trackSupportsTorch(track) || !track) {
       setTorchSupported(false);
       return;
@@ -254,38 +261,34 @@ export default function BarcodeScanner({
   };
 
   useEffect(() => {
-    if (active) void startCamera();
+    if (active && iosArmed) void startCamera();
     else void stopCamera();
     return () => {
       void stopCamera();
     };
-  }, [active, startCamera, stopCamera]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo active / iosArmed
+  }, [active, iosArmed]);
 
   const switchCamera = async (id: string) => {
-    await stopCamera();
+    setSelectedCameraId(id);
     await startCamera(id);
   };
 
   const apple = typeof navigator !== 'undefined' && isAppleMobile();
+  const needsArm = apple && active && !iosArmed && !scanning && !cameraError;
 
   return (
     <div className={cn('bg-card rounded-xl border border-border overflow-hidden', className)}>
       <div className="relative bg-black min-h-[min(68vh,560px)] h-[min(68vh,560px)] flex items-center justify-center overflow-hidden">
-        {/*
-          Importante: NO ocultar canvas — en iPhone el decodificador JS dibuja ahí.
-          Solo ocultamos el sombreado nativo y la imagen de placeholder.
-        */}
-        <div
+        <video
+          ref={videoRef}
           id={readerId}
-          className={cn(
-            'absolute inset-0 w-full h-full',
-            '[&_video]:!absolute [&_video]:!inset-0 [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover [&_video]:!max-w-none',
-            '[&_img]:hidden',
-            '[&_#qr-shaded-region]:!hidden [&_[id*="qr-shaded-region"]]:!hidden',
-            // canvas fuera de vista pero con tamaño (necesario en Safari)
-            '[&_canvas]:!absolute [&_canvas]:!opacity-0 [&_canvas]:!pointer-events-none'
-          )}
+          className="absolute inset-0 h-full w-full object-cover"
+          muted
+          playsInline
+          autoPlay
         />
+        <canvas ref={canvasRef} className="hidden" aria-hidden />
 
         {scanning && (
           <div className="absolute inset-0 z-10 pointer-events-none flex flex-col items-center justify-center px-4">
@@ -295,7 +298,7 @@ export default function BarcodeScanner({
             <div
               className={cn(
                 'relative w-[min(92%,360px)] rounded-2xl border-2 transition-colors duration-200',
-                apple ? 'h-[140px]' : 'h-[112px]',
+                apple ? 'h-[150px]' : 'h-[112px]',
                 flashOk
                   ? 'border-green-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.55),0_0_24px_rgba(74,222,128,0.55)]'
                   : 'border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]'
@@ -314,15 +317,31 @@ export default function BarcodeScanner({
             </div>
             {apple && (
               <p className="mt-4 max-w-[18rem] text-center text-xs text-white/75">
-                En iPhone acerca el código y manténlo estable un segundo
+                Acerca el código a la franja y espera un momento (iPhone)
               </p>
             )}
           </div>
         )}
 
-        {!scanning && !cameraError && active && (
+        {!scanning && !cameraError && active && iosArmed && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/50">
             <Loader2 className="h-8 w-8 text-primary animate-spin" />
+          </div>
+        )}
+        {needsArm && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 p-6 text-center bg-black/75">
+            <Camera className="h-12 w-12 text-white/80" />
+            <p className="text-sm text-white/90 max-w-xs">
+              En iPhone debes activar la cámara con un toque para poder escanear.
+            </p>
+            <Button
+              className="min-h-touch"
+              onClick={() => {
+                setIosArmed(true);
+              }}
+            >
+              <Camera className="h-4 w-4 mr-2" /> Iniciar cámara
+            </Button>
           </div>
         )}
         {!active && (
@@ -334,7 +353,14 @@ export default function BarcodeScanner({
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 p-4 text-center bg-black/80">
             <CameraOff className="h-10 w-10 text-red-400" />
             <p className="text-sm text-red-300">{cameraError}</p>
-            <Button size="sm" variant="outline" onClick={() => startCamera()}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setIosArmed(true);
+                void startCamera();
+              }}
+            >
               <Camera className="h-4 w-4 mr-2" /> Reintentar
             </Button>
           </div>
@@ -350,7 +376,6 @@ export default function BarcodeScanner({
                 onClick={() => void toggleTorch()}
                 className="min-h-touch bg-black/55 text-white border-white/20 hover:bg-black/70"
                 aria-pressed={torchOn}
-                aria-label={torchOn ? 'Apagar flash' : 'Encender flash'}
               >
                 {torchOn ? <Flashlight className="h-4 w-4 mr-2" /> : <FlashlightOff className="h-4 w-4 mr-2" />}
                 {torchOn ? 'Apagar flash' : 'Flash'}
@@ -366,7 +391,7 @@ export default function BarcodeScanner({
                 >
                   {cameras.map((c, i) => (
                     <option key={c.id} value={c.id} className="text-foreground">
-                      {(c.label || `Cámara ${i + 1}`) + (torchCameraIds.has(c.id) ? ' · flash' : '')}
+                      {c.label || `Cámara ${i + 1}`}
                     </option>
                   ))}
                 </select>
