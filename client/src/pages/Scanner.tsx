@@ -28,7 +28,10 @@ import { api } from '@/lib/api';
 import { addToStoredCart, getStoredCart } from '@/lib/transferCart';
 import { getBuildEventId, setBuildEventId } from '@/lib/eventBuild';
 import {
+  applyScanFocusHints,
   getVideoTrackFromReader,
+  hardenVideoForIOS,
+  isAppleMobile,
   pickPreferredScanCamera,
   setTrackTorch,
   trackSupportsTorch,
@@ -75,10 +78,13 @@ interface CameraOption {
   label: string;
 }
 
-/** Ventana horizontal tipo “láser”: ancha y baja. */
+/** Ventana horizontal; en iOS un poco más alta para ayudar al foco. */
 function barcodeScanBox(viewW: number, viewH: number) {
-  const width = Math.floor(Math.min(viewW * 0.88, viewW - 24));
-  const height = Math.floor(Math.min(Math.max(viewH * 0.16, 96), 132));
+  const apple = isAppleMobile();
+  const width = Math.floor(Math.min(viewW * (apple ? 0.92 : 0.88), viewW - 16));
+  const height = Math.floor(
+    Math.min(Math.max(viewH * (apple ? 0.22 : 0.16), apple ? 110 : 96), apple ? 160 : 132)
+  );
   return { width, height };
 }
 
@@ -323,6 +329,7 @@ export default function Scanner() {
             cams = [];
           }
         }
+        const apple = isAppleMobile();
         const camId = cameraId ?? selectedCameraIdRef.current ?? pickPreferredScanCamera(cams);
         if (camId) {
           selectedCameraIdRef.current = camId;
@@ -332,32 +339,31 @@ export default function Scanner() {
         const html5 = new Html5Qrcode(READER_ID, {
           verbose: false,
           formatsToSupport: BARCODE_FORMATS,
-          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+          // iOS: BarcodeDetector nativo falla mucho con CODE128 — usar motor JS
+          experimentalFeatures: { useBarCodeDetectorIfSupported: !apple },
         });
         scannerRef.current = html5;
 
-        const cameraSource: string | MediaTrackConstraints = camId
-          ? camId
-          : {
-              facingMode: { ideal: 'environment' },
-              ...VIDEO_CONSTRAINTS_BASE,
-            };
+        const cameraSource: string | MediaTrackConstraints =
+          apple && !cameraId
+            ? { facingMode: { ideal: 'environment' } }
+            : apple && cameraId
+              ? cameraId
+              : camId ?? { facingMode: { ideal: 'environment' } };
+
+        const videoConstraints: MediaTrackConstraints = apple
+          ? { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          : camId
+            ? { deviceId: { exact: camId }, ...VIDEO_CONSTRAINTS_BASE }
+            : { facingMode: { ideal: 'environment' }, ...VIDEO_CONSTRAINTS_BASE };
 
         await html5.start(
           cameraSource,
           {
-            fps: 45,
+            fps: apple ? 12 : 30,
             qrbox: barcodeScanBox,
             disableFlip: false,
-            videoConstraints: camId
-              ? {
-                  deviceId: { exact: camId },
-                  ...VIDEO_CONSTRAINTS_BASE,
-                }
-              : {
-                  facingMode: { ideal: 'environment' },
-                  ...VIDEO_CONSTRAINTS_BASE,
-                },
+            videoConstraints,
           },
           (decodedText) => {
             void handleScan(decodedText);
@@ -366,6 +372,13 @@ export default function Scanner() {
             /* fallo de lectura por frame: ignorar */
           }
         );
+
+        hardenVideoForIOS(READER_ID);
+        window.setTimeout(() => {
+          hardenVideoForIOS(READER_ID);
+          void applyScanFocusHints(READER_ID);
+        }, apple ? 600 : 300);
+
         setScanning(true);
         setTorchOn(false);
 
@@ -579,7 +592,7 @@ export default function Scanner() {
               '[&_video]:!absolute [&_video]:!inset-0 [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover [&_video]:!max-w-none',
               '[&_img]:hidden',
               '[&_#qr-shaded-region]:!hidden [&_[id*="qr-shaded-region"]]:!hidden',
-              '[&_canvas]:hidden'
+              '[&_canvas]:!absolute [&_canvas]:!opacity-0 [&_canvas]:!pointer-events-none'
             )}
           />
           {scanning && (
@@ -587,7 +600,7 @@ export default function Scanner() {
               <p className="mb-5 max-w-[20rem] text-center text-[15px] leading-snug font-medium text-white drop-shadow-md">
                 Por favor ubica el código de barras del producto dentro de la zona de escáner
               </p>
-              <div className="relative w-[min(88%,340px)] h-[112px] rounded-2xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]">
+              <div className="relative w-[min(92%,360px)] h-[min(22vh,140px)] rounded-2xl border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]">
                 <span className="absolute -top-0.5 -left-0.5 h-5 w-5 border-t-[3px] border-l-[3px] border-white rounded-tl-xl" />
                 <span className="absolute -top-0.5 -right-0.5 h-5 w-5 border-t-[3px] border-r-[3px] border-white rounded-tr-xl" />
                 <span className="absolute -bottom-0.5 -left-0.5 h-5 w-5 border-b-[3px] border-l-[3px] border-white rounded-bl-xl" />

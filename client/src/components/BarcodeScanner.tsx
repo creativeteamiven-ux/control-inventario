@@ -3,7 +3,10 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Camera, CameraOff, Flashlight, FlashlightOff, Loader2, SwitchCamera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
+  applyScanFocusHints,
   getVideoTrackFromReader,
+  hardenVideoForIOS,
+  isAppleMobile,
   pickPreferredScanCamera,
   setTrackTorch,
   trackSupportsTorch,
@@ -22,17 +25,41 @@ const BARCODE_FORMATS = [
   Html5QrcodeSupportedFormats.CODABAR,
 ];
 
-/** Ventana horizontal tipo “láser”: ancha y baja, alineada con el overlay visual. */
+/**
+ * Ventana de lectura.
+ * En iOS el decodificador JS es más lento/impreciso: zona un poco más alta ayuda al enfoque.
+ */
 function barcodeScanBox(viewW: number, viewH: number) {
-  const width = Math.floor(Math.min(viewW * 0.88, viewW - 24));
-  const height = Math.floor(Math.min(Math.max(viewH * 0.16, 96), 132));
+  const apple = isAppleMobile();
+  const width = Math.floor(Math.min(viewW * (apple ? 0.92 : 0.88), viewW - 16));
+  const height = Math.floor(
+    Math.min(Math.max(viewH * (apple ? 0.22 : 0.16), apple ? 110 : 96), apple ? 160 : 132)
+  );
   return { width, height };
 }
 
-const VIDEO_CONSTRAINTS_BASE = {
-  width: { min: 640, ideal: 1280 },
-  height: { min: 480, ideal: 720 },
-};
+function videoConstraintsFor(camId: string | undefined, apple: boolean): MediaTrackConstraints {
+  // iOS: facingMode es más fiable que deviceId exact; resolución ideal más baja = menos carga al ZXing JS
+  if (apple) {
+    return {
+      facingMode: { ideal: 'environment' },
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+    };
+  }
+  if (camId) {
+    return {
+      deviceId: { exact: camId },
+      width: { min: 640, ideal: 1280 },
+      height: { min: 480, ideal: 720 },
+    };
+  }
+  return {
+    facingMode: { ideal: 'environment' },
+    width: { min: 640, ideal: 1280 },
+    height: { min: 480, ideal: 720 },
+  };
+}
 
 interface BarcodeScannerProps {
   readerId: string;
@@ -116,6 +143,7 @@ export default function BarcodeScanner({
       setCameraError(null);
       lastScanRef.current = null;
       isStartingRef.current = true;
+      const apple = isAppleMobile();
       try {
         let cams = camerasRef.current;
         if (!cams.length) {
@@ -134,22 +162,36 @@ export default function BarcodeScanner({
           setSelectedCameraId(camId);
         }
 
+        // En iOS el BarcodeDetector nativo falla mucho con CODE128/39: mejor el motor JS de html5-qrcode.
+        // En Android Chrome el BarcodeDetector es excelente.
         const html5 = new Html5Qrcode(readerId, {
           verbose: false,
           formatsToSupport: BARCODE_FORMATS,
-          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+          experimentalFeatures: { useBarCodeDetectorIfSupported: !apple },
         });
         scannerRef.current = html5;
 
+        const constraints = videoConstraintsFor(
+          apple && !cameraId ? undefined : camId ?? undefined,
+          apple
+        );
+
+        // iOS: preferir facingMode como fuente de cámara (deviceId exact suele fallar o elegir ultrawide)
+        const cameraSource: string | MediaTrackConstraints =
+          apple && !cameraId
+            ? { facingMode: { ideal: 'environment' } }
+            : apple && cameraId
+              ? cameraId
+              : camId ?? { facingMode: { ideal: 'environment' } };
+
         await html5.start(
-          camId ?? { facingMode: { ideal: 'environment' }, ...VIDEO_CONSTRAINTS_BASE },
+          cameraSource,
           {
-            fps: 45,
+            // iOS: menos fps = más tiempo por frame para el decodificador JS
+            fps: apple ? 12 : 30,
             qrbox: barcodeScanBox,
             disableFlip: false,
-            videoConstraints: camId
-              ? { deviceId: { exact: camId }, ...VIDEO_CONSTRAINTS_BASE }
-              : { facingMode: { ideal: 'environment' }, ...VIDEO_CONSTRAINTS_BASE },
+            videoConstraints: constraints,
           },
           (decodedText) => {
             const code = decodedText.trim();
@@ -168,6 +210,14 @@ export default function BarcodeScanner({
           },
           () => {}
         );
+
+        hardenVideoForIOS(readerId);
+        // Pequeña espera para que el track esté listo antes de pedir foco
+        window.setTimeout(() => {
+          hardenVideoForIOS(readerId);
+          void applyScanFocusHints(readerId);
+        }, apple ? 600 : 300);
+
         setScanning(true);
         setTorchOn(false);
 
@@ -216,10 +266,15 @@ export default function BarcodeScanner({
     await startCamera(id);
   };
 
+  const apple = typeof navigator !== 'undefined' && isAppleMobile();
+
   return (
     <div className={cn('bg-card rounded-xl border border-border overflow-hidden', className)}>
       <div className="relative bg-black min-h-[min(68vh,560px)] h-[min(68vh,560px)] flex items-center justify-center overflow-hidden">
-        {/* Video a pantalla completa; ocultamos el sombreado nativo de html5-qrcode */}
+        {/*
+          Importante: NO ocultar canvas — en iPhone el decodificador JS dibuja ahí.
+          Solo ocultamos el sombreado nativo y la imagen de placeholder.
+        */}
         <div
           id={readerId}
           className={cn(
@@ -227,11 +282,11 @@ export default function BarcodeScanner({
             '[&_video]:!absolute [&_video]:!inset-0 [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover [&_video]:!max-w-none',
             '[&_img]:hidden',
             '[&_#qr-shaded-region]:!hidden [&_[id*="qr-shaded-region"]]:!hidden',
-            '[&_canvas]:hidden'
+            // canvas fuera de vista pero con tamaño (necesario en Safari)
+            '[&_canvas]:!absolute [&_canvas]:!opacity-0 [&_canvas]:!pointer-events-none'
           )}
         />
 
-        {/* Visor: máscara oscura + ventana central (estilo app de inventario rápido) */}
         {scanning && (
           <div className="absolute inset-0 z-10 pointer-events-none flex flex-col items-center justify-center px-4">
             <p className="mb-5 max-w-[20rem] text-center text-[15px] leading-snug font-medium text-white drop-shadow-md">
@@ -239,18 +294,17 @@ export default function BarcodeScanner({
             </p>
             <div
               className={cn(
-                'relative w-[min(88%,340px)] h-[112px] rounded-2xl border-2 transition-colors duration-200',
+                'relative w-[min(92%,360px)] rounded-2xl border-2 transition-colors duration-200',
+                apple ? 'h-[140px]' : 'h-[112px]',
                 flashOk
                   ? 'border-green-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.55),0_0_24px_rgba(74,222,128,0.55)]'
                   : 'border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]'
               )}
             >
-              {/* Esquinas de guía */}
               <span className="absolute -top-0.5 -left-0.5 h-5 w-5 border-t-[3px] border-l-[3px] border-white rounded-tl-xl" />
               <span className="absolute -top-0.5 -right-0.5 h-5 w-5 border-t-[3px] border-r-[3px] border-white rounded-tr-xl" />
               <span className="absolute -bottom-0.5 -left-0.5 h-5 w-5 border-b-[3px] border-l-[3px] border-white rounded-bl-xl" />
               <span className="absolute -bottom-0.5 -right-0.5 h-5 w-5 border-b-[3px] border-r-[3px] border-white rounded-br-xl" />
-              {/* Línea de lectura */}
               <span
                 className={cn(
                   'absolute left-3 right-3 top-1/2 -translate-y-1/2 h-0.5 rounded-full',
@@ -258,6 +312,11 @@ export default function BarcodeScanner({
                 )}
               />
             </div>
+            {apple && (
+              <p className="mt-4 max-w-[18rem] text-center text-xs text-white/75">
+                En iPhone acerca el código y manténlo estable un segundo
+              </p>
+            )}
           </div>
         )}
 
@@ -281,7 +340,7 @@ export default function BarcodeScanner({
           </div>
         )}
 
-        {scanning && (torchSupported || cameras.length > 1) && (
+        {scanning && (torchSupported || (!apple && cameras.length > 1)) && (
           <div className="absolute bottom-3 left-0 right-0 z-20 flex flex-wrap items-center justify-center gap-2 px-3 pointer-events-auto">
             {torchSupported && (
               <Button
@@ -297,7 +356,7 @@ export default function BarcodeScanner({
                 {torchOn ? 'Apagar flash' : 'Flash'}
               </Button>
             )}
-            {cameras.length > 1 && (
+            {!apple && cameras.length > 1 && (
               <div className="relative flex items-center">
                 <SwitchCamera className="absolute left-2 h-4 w-4 text-white/80 pointer-events-none" />
                 <select

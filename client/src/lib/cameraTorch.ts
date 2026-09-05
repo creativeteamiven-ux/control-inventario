@@ -4,12 +4,68 @@ type TorchCaps = MediaTrackCapabilities & { torch?: boolean };
 
 export type CameraChoice = { id: string; label: string };
 
+/** iPhone/iPad (Safari o Chrome/Firefox en iOS — todos usan WebKit). */
+export function isAppleMobile(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  // iPadOS 13+ a veces se reporta como Mac con touch
+  return /Macintosh/i.test(ua) && typeof document !== 'undefined' && 'ontouchend' in document;
+}
+
 export function getVideoTrackFromReader(readerId: string): MediaStreamTrack | null {
   const el = document.getElementById(readerId);
   const video = el?.querySelector('video') as HTMLVideoElement | null;
   const stream = video?.srcObject;
   if (!(stream instanceof MediaStream)) return null;
   return stream.getVideoTracks()[0] ?? null;
+}
+
+/** Atributos críticos para que Safari no pause el video en fullscreen/inline. */
+export function hardenVideoForIOS(readerId: string) {
+  const el = document.getElementById(readerId);
+  const video = el?.querySelector('video') as HTMLVideoElement | null;
+  if (!video) return;
+  video.setAttribute('playsinline', 'true');
+  video.setAttribute('webkit-playsinline', 'true');
+  video.muted = true;
+  video.playsInline = true;
+  void video.play().catch(() => {});
+}
+
+/**
+ * Tras arrancar, pide foco continuo / zoom suave si el track lo permite.
+ * En iOS muchas caps no existen; se ignora el error.
+ */
+export async function applyScanFocusHints(readerId: string) {
+  const track = getVideoTrackFromReader(readerId);
+  if (!track || typeof track.applyConstraints !== 'function') return;
+  try {
+    const caps =
+      typeof track.getCapabilities === 'function'
+        ? (track.getCapabilities() as MediaTrackCapabilities & {
+            focusMode?: string[];
+            zoom?: { min: number; max: number };
+          })
+        : null;
+    const advanced: Record<string, unknown>[] = [];
+    if (caps?.focusMode?.includes?.('continuous')) {
+      advanced.push({ focusMode: 'continuous' });
+    }
+    if (caps?.zoom && typeof caps.zoom.max === 'number' && caps.zoom.max > 1) {
+      const z = Math.min(caps.zoom.max, Math.max(caps.zoom.min ?? 1, 1.5));
+      advanced.push({ zoom: z });
+    }
+    if (!advanced.length) {
+      await track.applyConstraints({
+        advanced: [{ focusMode: 'continuous' } as unknown as MediaTrackConstraintSet],
+      });
+      return;
+    }
+    await track.applyConstraints({ advanced: advanced as unknown as MediaTrackConstraintSet[] });
+  } catch {
+    /* Safari a menudo no soporta estas constraints */
+  }
 }
 
 export function trackSupportsTorch(track: MediaStreamTrack | null): boolean {
