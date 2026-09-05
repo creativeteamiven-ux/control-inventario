@@ -290,15 +290,7 @@ router.post('/:id/lists', requirePermission('events.manage'), async (req: AuthRe
       },
     });
 
-    let ids = deviceIds ?? [];
-    if (listKind === 'CATEGORY' && categoryId && ids.length === 0) {
-      const devices = await prisma.device.findMany({
-        where: { deletedAt: null, categoryId },
-        select: { id: true },
-        take: 500,
-      });
-      ids = devices.map((d) => d.id);
-    }
+    const ids = deviceIds ?? [];
 
     let order = 0;
     for (const deviceId of ids) {

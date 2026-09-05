@@ -18,17 +18,34 @@ interface DevicePickerModalProps {
   onOpenChange: (open: boolean) => void;
   cartIds: string[];
   onAdd: (devices: CartDevice[]) => void;
+  /** Filtrar por categoría (listas de evento por categoría). */
+  categoryId?: string | null;
+  title?: string;
+  alreadyInLabel?: string;
 }
 
-export default function DevicePickerModal({ open, onOpenChange, cartIds, onAdd }: DevicePickerModalProps) {
+export default function DevicePickerModal({
+  open,
+  onOpenChange,
+  cartIds,
+  onAdd,
+  categoryId,
+  title = 'Agregar equipos',
+  alreadyInLabel = 'Ya agregado',
+}: DevicePickerModalProps) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const { data, isLoading } = useQuery({
-    queryKey: ['devices', 'picker', search],
+    queryKey: ['devices', 'picker', search, categoryId ?? ''],
     queryFn: async () => {
       const { data } = await api.get('/api/devices', {
-        params: { search: search || undefined, page: 1, limit: 100 },
+        params: {
+          search: search || undefined,
+          categoryId: categoryId || undefined,
+          page: 1,
+          limit: 100,
+        },
       });
       return data;
     },
@@ -56,10 +73,16 @@ export default function DevicePickerModal({ open, onOpenChange, cartIds, onAdd }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) setSelected(new Set());
+        onOpenChange(v);
+      }}
+    >
       <DialogContent className="max-w-xl max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Agregar equipos al traslado</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <div className="flex-1 min-h-0 flex flex-col gap-3">
           <div className="relative">
@@ -71,6 +94,9 @@ export default function DevicePickerModal({ open, onOpenChange, cartIds, onAdd }
               className="pl-9"
             />
           </div>
+          {categoryId && (
+            <p className="text-xs text-muted">Mostrando equipos de la categoría seleccionada. Elige cuáles agregar.</p>
+          )}
           <ul className="flex-1 overflow-y-auto border border-border rounded-md divide-y divide-border min-h-[200px]">
             {isLoading ? (
               <li className="p-6 text-center text-muted">Cargando...</li>
@@ -101,7 +127,7 @@ export default function DevicePickerModal({ open, onOpenChange, cartIds, onAdd }
                     </div>
                     <span className="font-mono text-sm text-primary">{d.internalCode}</span>
                     <span className="text-sm truncate">{d.name}</span>
-                    {inCart && <span className="text-xs text-muted ml-auto">En carrito</span>}
+                    {inCart && <span className="text-xs text-muted ml-auto">{alreadyInLabel}</span>}
                   </li>
                 );
               })

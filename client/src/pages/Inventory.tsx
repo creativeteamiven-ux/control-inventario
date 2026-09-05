@@ -104,6 +104,7 @@ export default function Inventory() {
   const [bulkUpdating, setBulkUpdating] = useState(false);
   const [addToEventOpen, setAddToEventOpen] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string>(() => getBuildEventId() || '');
+  const [selectedListId, setSelectedListId] = useState<string>('');
   const [addingToEvent, setAddingToEvent] = useState(false);
   const [limit, setLimit] = useState(25);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -127,6 +128,29 @@ export default function Inventory() {
     },
     enabled: canManageEvents && addToEventOpen,
   });
+
+  const effectiveEventId =
+    selectedEventId && draftEvents.some((e) => e.id === selectedEventId)
+      ? selectedEventId
+      : draftEvents[0]?.id || '';
+
+  const { data: eventForLists } = useQuery({
+    queryKey: ['event', effectiveEventId, 'lists-picker'],
+    queryFn: async () => {
+      const { data } = await api.get<{
+        id: string;
+        lists: { id: string; name: string; stats?: { total: number } }[];
+      }>(`/api/events/${effectiveEventId}`);
+      return data;
+    },
+    enabled: canManageEvents && addToEventOpen && !!effectiveEventId,
+  });
+
+  const eventLists = eventForLists?.lists ?? [];
+  const effectiveListId =
+    selectedListId && eventLists.some((l) => l.id === selectedListId)
+      ? selectedListId
+      : eventLists[0]?.id || '';
 
   function flattenCategories(
     cats: { id: string; name: string; _count?: { devices: number }; children?: unknown[] }[],
@@ -382,28 +406,30 @@ export default function Inventory() {
   };
 
   const bulkAddToEvent = async () => {
-    const eventId =
-      selectedEventId && draftEvents.some((e) => e.id === selectedEventId)
-        ? selectedEventId
-        : draftEvents[0]?.id;
+    const eventId = effectiveEventId;
     if (!eventId || selectedIds.size === 0) {
       toast.error('Selecciona un evento en borrador');
+      return;
+    }
+    if (!effectiveListId) {
+      toast.error('Selecciona una lista del evento');
       return;
     }
     setAddingToEvent(true);
     try {
       const { data } = await api.post<{ stats?: { total: number }; name?: string }>(
         `/api/events/${eventId}/items`,
-        { deviceIds: Array.from(selectedIds) }
+        { deviceIds: Array.from(selectedIds), listId: effectiveListId }
       );
       setBuildEventId(eventId);
       setSelectedEventId(eventId);
       await queryClient.invalidateQueries({ queryKey: ['events'] });
       await queryClient.invalidateQueries({ queryKey: ['event', eventId] });
+      const listName = eventLists.find((l) => l.id === effectiveListId)?.name;
       const total = data?.stats?.total;
       toast.success(
         total != null
-          ? `${selectedIds.size} equipo(s) agregados. Lista: ${total} en total`
+          ? `${selectedIds.size} equipo(s) agregados a “${listName ?? 'lista'}”. Total evento: ${total}`
           : `${selectedIds.size} equipo(s) agregados al evento`
       );
       setAddToEventOpen(false);
@@ -759,7 +785,7 @@ export default function Inventory() {
             <div>
               <h3 className="font-semibold text-lg">Agregar a evento</h3>
               <p className="text-sm text-muted mt-1">
-                {selectedIds.size} equipo(s) se agregarán a la lista del evento en borrador.
+                {selectedIds.size} equipo(s) se agregarán a la lista que elijas del evento en borrador.
               </p>
             </div>
             {draftEvents.length === 0 ? (
@@ -772,19 +798,43 @@ export default function Inventory() {
                 </Button>
               </div>
             ) : (
-              <div>
-                <label className="text-sm text-muted block mb-1.5">Evento</label>
-                <select
-                  value={selectedEventId && draftEvents.some((e) => e.id === selectedEventId) ? selectedEventId : draftEvents[0]?.id || ''}
-                  onChange={(e) => setSelectedEventId(e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  {draftEvents.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.name} ({e.stats.total} equipos)
-                    </option>
-                  ))}
-                </select>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-sm text-muted block mb-1.5">Evento</label>
+                  <select
+                    value={effectiveEventId}
+                    onChange={(e) => {
+                      setSelectedEventId(e.target.value);
+                      setSelectedListId('');
+                    }}
+                    className="flex h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    {draftEvents.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.name} ({e.stats.total} equipos)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm text-muted block mb-1.5">Lista</label>
+                  {eventLists.length === 0 ? (
+                    <p className="text-sm text-muted">Cargando listas…</p>
+                  ) : (
+                    <select
+                      value={effectiveListId}
+                      onChange={(e) => setSelectedListId(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      {eventLists.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.name}
+                          {l.stats?.total != null ? ` (${l.stats.total})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
               </div>
             )}
             <div className="flex gap-2 justify-end">
@@ -793,7 +843,7 @@ export default function Inventory() {
               </Button>
               <Button
                 onClick={bulkAddToEvent}
-                disabled={addingToEvent || draftEvents.length === 0}
+                disabled={addingToEvent || draftEvents.length === 0 || !effectiveListId}
               >
                 {addingToEvent ? 'Agregando...' : 'Agregar'}
               </Button>

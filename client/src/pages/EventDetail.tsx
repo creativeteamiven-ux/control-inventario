@@ -131,6 +131,8 @@ export default function EventDetailPage() {
   const canScan = hasPermission('events.scan');
 
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerCategoryId, setPickerCategoryId] = useState<string | null>(null);
+  const [pickerTitle, setPickerTitle] = useState('Agregar equipos a la lista');
   const [scanning, setScanning] = useState(canScan);
   const [addingScan, setAddingScan] = useState(true);
   const [lastScan, setLastScan] = useState<ScanResult | null>(null);
@@ -270,6 +272,12 @@ export default function EventDetailPage() {
     }
   };
 
+  const openManualPicker = (opts?: { categoryId?: string | null; title?: string }) => {
+    setPickerCategoryId(opts?.categoryId ?? null);
+    setPickerTitle(opts?.title ?? 'Agregar equipos a la lista');
+    setPickerOpen(true);
+  };
+
   const handleCreateList = async () => {
     if (!id) return;
     if (newListKind === 'CUSTOM' && !newListName.trim()) {
@@ -292,9 +300,16 @@ export default function EventDetailPage() {
       if (created) setActiveListId(created.id);
       setCreateListOpen(false);
       setNewListName('');
+      const catId = newListKind === 'CATEGORY' ? newListCategoryId : null;
       setNewListCategoryId('');
       setNewListKind('CUSTOM');
-      toast.success('Lista creada');
+      toast.success(catId ? 'Lista creada — elige los equipos de la categoría' : 'Lista creada');
+      if (catId && created) {
+        openManualPicker({
+          categoryId: catId,
+          title: `Elegir equipos · ${created.name}`,
+        });
+      }
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error';
       toast.error(msg);
@@ -452,6 +467,11 @@ export default function EventDetailPage() {
                 className="w-full h-10 px-3 rounded-md bg-card border border-border text-sm"
               />
             )}
+            {newListKind === 'CATEGORY' && (
+              <p className="text-xs text-muted">
+                La lista se crea vacía; después eliges qué equipos de esa categoría incluir.
+              </p>
+            )}
             <div className="flex gap-2">
               <Button size="sm" onClick={handleCreateList} disabled={creatingList}>
                 {creatingList ? 'Creando…' : 'Crear lista'}
@@ -546,7 +566,7 @@ export default function EventDetailPage() {
             </div>
           )}
           {canManage && (
-            <Button variant="outline" size="sm" onClick={() => setPickerOpen(true)} className="w-full sm:w-auto">
+            <Button variant="outline" size="sm" onClick={() => openManualPicker()} className="w-full sm:w-auto">
               <Plus className="h-4 w-4 mr-1" /> Buscar manualmente
             </Button>
           )}
@@ -689,7 +709,17 @@ export default function EventDetailPage() {
               </Button>
             ))}
             {canManage && isDraft && (
-              <Button variant="ghost" size="sm" onClick={() => setPickerOpen(true)} className="text-muted">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  openManualPicker({
+                    categoryId: activeList?.kind === 'CATEGORY' ? activeList.categoryId : null,
+                    title: activeList ? `Agregar a “${activeList.name}”` : 'Agregar equipos',
+                  })
+                }
+                className="text-muted"
+              >
                 <Plus className="h-4 w-4 mr-1" /> Manual
               </Button>
             )}
@@ -750,8 +780,14 @@ export default function EventDetailPage() {
 
       <DevicePickerModal
         open={pickerOpen}
-        onOpenChange={setPickerOpen}
+        onOpenChange={(open) => {
+          setPickerOpen(open);
+          if (!open) setPickerCategoryId(null);
+        }}
         cartIds={event.items.map((i) => i.device.id)}
+        categoryId={pickerCategoryId}
+        title={pickerTitle}
+        alreadyInLabel="En el evento"
         onAdd={async (devices) => {
           try {
             await api.post(`/api/events/${id}/items`, {
