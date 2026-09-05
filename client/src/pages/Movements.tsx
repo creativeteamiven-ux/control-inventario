@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { ArrowLeftRight, Download, Upload, Plus, CheckCircle, XCircle, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, Download, Upload, Plus, CheckCircle, XCircle, Trash2, Clock, Check } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
@@ -167,6 +167,77 @@ export default function Movements() {
     },
   });
 
+  const { data: pendingData, isLoading: pendingLoading } = useQuery({
+    queryKey: ['movements-pending'],
+    queryFn: async () => {
+      const { data } = await api.get<{
+        items: {
+          id: string;
+          type: string;
+          reason: string;
+          fromLocation: string | null;
+          toLocation: string | null;
+          createdAt: string;
+          eventId: string | null;
+          device: { id: string; name: string; internalCode: string };
+          user: { name: string; email: string };
+        }[];
+        total: number;
+      }>('/api/movements/pending');
+      return data;
+    },
+    refetchInterval: 10000,
+  });
+
+  const [approving, setApproving] = useState(false);
+
+  const approveOne = async (movementId: string) => {
+    try {
+      await api.post(`/api/movements/${movementId}/approve`);
+      queryClient.invalidateQueries({ queryKey: ['movements-pending'] });
+      queryClient.invalidateQueries({ queryKey: ['movements'] });
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      toast.success('Traslado autorizado');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error';
+      toast.error(msg);
+    }
+  };
+
+  const rejectOne = async (movementId: string) => {
+    if (!confirm('¿Rechazar este traslado? El evento podrá volver a enviarlo.')) return;
+    try {
+      await api.post(`/api/movements/${movementId}/reject`);
+      queryClient.invalidateQueries({ queryKey: ['movements-pending'] });
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      toast.success('Traslado rechazado');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error';
+      toast.error(msg);
+    }
+  };
+
+  const approveAllPending = async () => {
+    const ids = pendingData?.items?.map((i) => i.id) ?? [];
+    if (!ids.length) return;
+    if (!confirm(`¿Autorizar ${ids.length} traslado(s)? Se actualizará la ubicación de los equipos.`)) return;
+    setApproving(true);
+    try {
+      const { data: res } = await api.post<{ approved: number }>('/api/movements/approve-batch', { ids });
+      queryClient.invalidateQueries({ queryKey: ['movements-pending'] });
+      queryClient.invalidateQueries({ queryKey: ['movements'] });
+      queryClient.invalidateQueries({ queryKey: ['devices'] });
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      toast.success(`${res.approved} traslado(s) autorizado(s)`);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || 'Error';
+      toast.error(msg);
+    } finally {
+      setApproving(false);
+    }
+  };
+
   const { data: locationsData } = useQuery({
     queryKey: ['locations'],
     queryFn: async () => {
@@ -230,6 +301,63 @@ export default function Movements() {
           </div>
         )}
       </div>
+
+      {/* Autorizaciones pendientes desde eventos */}
+      <div className="bg-card rounded-xl border border-amber-500/30 p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h2 className="font-semibold flex items-center gap-2">
+            <Clock className="h-4 w-4 text-amber-400" />
+            Pendientes de autorización
+            {pendingData?.total ? (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300">{pendingData.total}</span>
+            ) : null}
+          </h2>
+          {canManage && (pendingData?.items?.length ?? 0) > 0 && (
+            <Button size="sm" onClick={approveAllPending} disabled={approving}>
+              <Check className="h-4 w-4 mr-1" />
+              {approving ? 'Autorizando…' : 'Autorizar todos'}
+            </Button>
+          )}
+        </div>
+        <p className="text-xs text-muted">
+          Traslados enviados desde Eventos. Al autorizar, se actualiza la ubicación del equipo en inventario.
+        </p>
+        {pendingLoading ? (
+          <p className="text-sm text-muted">Cargando…</p>
+        ) : !pendingData?.items?.length ? (
+          <p className="text-sm text-muted py-2">No hay traslados pendientes.</p>
+        ) : (
+          <ul className="space-y-2 max-h-80 overflow-y-auto">
+            {pendingData.items.map((m) => (
+              <li key={m.id} className="flex items-start gap-3 p-3 rounded-lg border border-border bg-background">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate">{m.device.name}</p>
+                  <p className="text-xs font-mono text-muted">{m.device.internalCode}</p>
+                  <p className="text-xs text-muted mt-1">
+                    {MOVEMENT_TYPE_LABELS[m.type] ?? m.type}: {locationLabel(m.fromLocation || '')} →{' '}
+                    {locationLabel(m.toLocation || '')}
+                  </p>
+                  <p className="text-xs text-muted truncate">{m.reason}</p>
+                  <p className="text-[11px] text-muted mt-0.5">
+                    Solicitado por {m.user.name} · {format(new Date(m.createdAt), 'dd MMM HH:mm', { locale: es })}
+                  </p>
+                </div>
+                {canManage && (
+                  <div className="flex flex-col gap-1 shrink-0">
+                    <Button size="sm" onClick={() => approveOne(m.id)}>
+                      Autorizar
+                    </Button>
+                    <Button size="sm" variant="ghost" className="text-destructive" onClick={() => rejectOne(m.id)}>
+                      Rechazar
+                    </Button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       {canManage && (
       <TransferCart
         items={cart}

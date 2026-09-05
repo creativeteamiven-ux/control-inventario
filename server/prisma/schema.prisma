@@ -48,6 +48,17 @@ enum EventPhase {
   INBOUND
 }
 
+enum EventListKind {
+  CUSTOM
+  CATEGORY
+}
+
+enum MovementStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum UserRole {
   ADMIN
   MANAGER
@@ -170,12 +181,21 @@ model Movement {
   deviceId     String
   device       Device         @relation(fields: [deviceId], references: [id])
   type         MovementType
+  status       MovementStatus @default(APPROVED)
   fromLocation String?        @db.VarChar(64)
   toLocation   String?        @db.VarChar(64)
   reason       String
   userId       String
   user         User           @relation(fields: [userId], references: [id])
+  eventId      String?
+  eventListId  String?
+  approvedBy   String?
+  approvedAt   DateTime?
+  rejectedAt   DateTime?
   createdAt    DateTime       @default(now())
+
+  @@index([status])
+  @@index([eventId])
 }
 
 model Maintenance {
@@ -275,7 +295,7 @@ model AlertRecipient {
   updatedAt DateTime @updatedAt
 }
 
-// Listas de equipos por evento con checklist de salida/entrada por escaneo.
+// Eventos con una o más listas de equipos y checklist de salida/entrada.
 model Event {
   id            String      @id @default(cuid())
   name          String
@@ -288,6 +308,7 @@ model Event {
   createdBy     String
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+  lists         EventList[]
   items         EventItem[]
   scans         EventScan[]
 
@@ -296,13 +317,33 @@ model Event {
   @@map("InventoryEvent")
 }
 
+model EventList {
+  id         String        @id @default(cuid())
+  eventId    String
+  event      Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name       String
+  kind       EventListKind @default(CUSTOM)
+  categoryId String?
+  sortOrder  Int           @default(0)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  items      EventItem[]
+
+  @@index([eventId])
+  @@map("InventoryEventList")
+}
+
 model EventItem {
   id                 String    @id @default(cuid())
   eventId            String
   event              Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  listId             String?
+  list               EventList? @relation(fields: [listId], references: [id], onDelete: Cascade)
   deviceId           String
   device             Device    @relation(fields: [deviceId], references: [id])
   sortOrder          Int       @default(0)
+  /// Ubicación real del equipo al verificar salida (para devolverlo ahí).
+  originLocation     String?   @db.VarChar(64)
   outboundScannedAt  DateTime?
   outboundUserId     String?
   outboundUserName   String?
@@ -315,6 +356,7 @@ model EventItem {
 
   @@unique([eventId, deviceId])
   @@index([eventId])
+  @@index([listId])
   @@map("InventoryEventItem")
 }
 

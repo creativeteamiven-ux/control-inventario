@@ -215,6 +215,9 @@ export default function Events() {
                 </p>
                 {e.stats.total > 0 && (
                   <p className="text-xs text-muted mt-1">
+                    {typeof (e as { listCount?: number }).listCount === 'number'
+                      ? `${(e as { listCount?: number }).listCount} lista(s) · `
+                      : ''}
                     {e.stats.total} equipos · Salida {e.stats.outboundDone}/{e.stats.total} · Regreso{' '}
                     {e.stats.inboundDone}/{e.stats.total}
                   </p>
