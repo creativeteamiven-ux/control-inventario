@@ -52,10 +52,15 @@ export default function DevicePickerModal({
     enabled: open,
   });
 
-  const devices = (data?.devices ?? []) as { id: string; internalCode: string; name: string }[];
+  const devices = (data?.devices ?? []) as {
+    id: string;
+    internalCode: string;
+    name: string;
+    serialNumber?: string | null;
+  }[];
   const alreadyInCart = new Set(cartIds);
 
-  const toggle = (d: { id: string; internalCode: string; name: string }) => {
+  const toggle = (d: { id: string; internalCode: string; name: string; serialNumber?: string | null }) => {
     if (alreadyInCart.has(d.id)) return;
     setSelected((prev) => {
       const next = new Set(prev);
@@ -66,7 +71,9 @@ export default function DevicePickerModal({
   };
 
   const handleAdd = () => {
-    const toAdd = devices.filter((d) => selected.has(d.id)).map((d) => ({ id: d.id, internalCode: d.internalCode, name: d.name }));
+    const toAdd = devices
+      .filter((d) => selected.has(d.id))
+      .map((d) => ({ id: d.id, internalCode: d.internalCode, name: d.name }));
     onAdd(toAdd);
     setSelected(new Set());
     onOpenChange(false);
@@ -125,7 +132,9 @@ export default function DevicePickerModal({
                         <Plus className="h-3 w-3 text-primary-foreground" />
                       ) : null}
                     </div>
-                    <span className="font-mono text-sm text-primary">{d.internalCode}</span>
+                    <span className="font-mono text-sm text-primary">
+                      {d.serialNumber?.trim() || d.internalCode}
+                    </span>
                     <span className="text-sm truncate">{d.name}</span>
                     {inCart && <span className="text-xs text-muted ml-auto">{alreadyInLabel}</span>}
                   </li>

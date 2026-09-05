@@ -23,16 +23,24 @@ const BARCODE_FORMATS = [
 ];
 
 function barcodeScanBox(viewW: number, viewH: number) {
-  return { width: Math.floor(viewW * 0.92), height: Math.floor(Math.min(viewH * 0.32, 140)) };
+  // Zona ancha y un poco más alta: más fácil de enganchar el código al pasar rápido
+  return { width: Math.floor(viewW * 0.94), height: Math.floor(Math.min(viewH * 0.38, 168)) };
 }
+
+const VIDEO_CONSTRAINTS_BASE = {
+  width: { min: 640, ideal: 1280 },
+  height: { min: 480, ideal: 720 },
+};
 
 interface BarcodeScannerProps {
   readerId: string;
   active: boolean;
   onScan: (code: string) => void | Promise<void>;
   className?: string;
-  /** Evita reenviar el mismo código durante este tiempo (ms). Default 1500. */
+  /** Evita reenviar el mismo código durante este tiempo (ms). Default 650. */
   sameCodeCooldownMs?: number;
+  /** Pausa mínima entre dos códigos distintos (ms). Default 180. */
+  betweenCodesMs?: number;
 }
 
 export default function BarcodeScanner({
@@ -40,17 +48,20 @@ export default function BarcodeScanner({
   active,
   onScan,
   className,
-  sameCodeCooldownMs = 1500,
+  sameCodeCooldownMs = 650,
+  betweenCodesMs = 180,
 }: BarcodeScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isStartingRef = useRef(false);
   const lastScanRef = useRef<{ code: string; at: number } | null>(null);
   const onScanRef = useRef(onScan);
   const cooldownRef = useRef(sameCodeCooldownMs);
+  const betweenRef = useRef(betweenCodesMs);
   const camerasRef = useRef<{ id: string; label: string }[]>([]);
   const selectedCameraIdRef = useRef<string | null>(null);
   onScanRef.current = onScan;
   cooldownRef.current = sameCodeCooldownMs;
+  betweenRef.current = betweenCodesMs;
 
   const [scanning, setScanning] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -126,22 +137,26 @@ export default function BarcodeScanner({
         scannerRef.current = html5;
 
         await html5.start(
-          camId ?? { facingMode: { ideal: 'environment' }, width: { min: 640, ideal: 1920 }, height: { min: 480, ideal: 1080 } },
+          camId ?? { facingMode: { ideal: 'environment' }, ...VIDEO_CONSTRAINTS_BASE },
           {
-            fps: 20,
+            fps: 30,
             qrbox: barcodeScanBox,
             disableFlip: false,
+            aspectRatio: 1.333,
             videoConstraints: camId
-              ? { deviceId: { exact: camId }, width: { min: 640, ideal: 1920 }, height: { min: 480, ideal: 1080 } }
-              : { facingMode: { ideal: 'environment' }, width: { min: 640, ideal: 1920 }, height: { min: 480, ideal: 1080 } },
+              ? { deviceId: { exact: camId }, ...VIDEO_CONSTRAINTS_BASE }
+              : { facingMode: { ideal: 'environment' }, ...VIDEO_CONSTRAINTS_BASE },
           },
           (decodedText) => {
             const code = decodedText.trim();
             if (!code) return;
             const now = Date.now();
             const prev = lastScanRef.current;
-            const cooldown = cooldownRef.current;
-            if (prev && prev.code === code && now - prev.at < cooldown) return;
+            if (prev) {
+              const gap = now - prev.at;
+              if (prev.code === code && gap < cooldownRef.current) return;
+              if (prev.code !== code && gap < betweenRef.current) return;
+            }
             lastScanRef.current = { code, at: now };
             void onScanRef.current(code);
           },

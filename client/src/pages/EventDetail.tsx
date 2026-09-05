@@ -95,15 +95,19 @@ interface ScanResult {
   success: boolean;
   code: string;
   message: string;
-  device?: { id: string; name: string; internalCode: string };
+  device?: { id: string; name: string; internalCode: string; serialNumber?: string | null };
 }
 
 interface AddScanResult {
   success: boolean;
   code: string;
   message: string;
-  device?: { id: string; name: string; internalCode: string };
+  device?: { id: string; name: string; internalCode: string; serialNumber?: string | null };
   total?: number;
+}
+
+function deviceEventLabel(d: { serialNumber?: string | null; internalCode: string }) {
+  return d.serialNumber?.trim() || d.internalCode;
 }
 
 interface CategoryNode {
@@ -167,10 +171,12 @@ export default function EventDetailPage() {
       const { data } = await api.get<{
         eventLocationLabel: string;
         fromLocationLabel: string;
-        devices: {
+          devices: {
           id: string;
           name: string;
           internalCode: string;
+          serialNumber?: string | null;
+          label?: string;
           onEventList: boolean;
           suggestedReturnLabel: string;
         }[];
@@ -213,22 +219,22 @@ export default function EventDetailPage() {
       toast(result.message || 'Este equipo ya fue verificado', {
         id: toastId,
         icon: 'ℹ️',
-        duration: 2800,
+        duration: 1800,
       });
       return;
     }
     if (result.success && result.code === 'OK') {
       toast.success(
-        result.device ? `Equipo verificado: ${result.device.internalCode}` : 'Equipo verificado',
-        { id: toastId, duration: 2800 }
+        result.device ? `Equipo verificado: ${deviceEventLabel(result.device)}` : 'Equipo verificado',
+        { id: toastId, duration: 1800 }
       );
       return;
     }
     if (result.success) {
-      toast.success(result.message, { id: toastId, duration: 2800 });
+      toast.success(result.message, { id: toastId, duration: 1800 });
       return;
     }
-    toast.error(result.message, { id: toastId, duration: 3500 });
+    toast.error(result.message, { id: toastId, duration: 2800 });
   };
 
   const matchItemByCode = (raw: string) => {
@@ -253,9 +259,9 @@ export default function EventDetailPage() {
         });
         setLastAdded(data);
         if (data.success) {
-          toast.success(data.message, { duration: 1800 });
-          await queryClient.invalidateQueries({ queryKey: ['event', id] });
-          await queryClient.invalidateQueries({ queryKey: ['events'] });
+          toast.success(data.message, { duration: 1200 });
+          void queryClient.invalidateQueries({ queryKey: ['event', id] });
+          void queryClient.invalidateQueries({ queryKey: ['events'] });
         } else {
           toast.error(data.message);
         }
@@ -285,6 +291,7 @@ export default function EventDetailPage() {
               id: local.device.id,
               name: local.device.name,
               internalCode: local.device.internalCode,
+              serialNumber: local.device.serialNumber,
             },
           });
           return;
@@ -296,8 +303,8 @@ export default function EventDetailPage() {
         const { data } = await api.post<ScanResult>(`/api/events/${id}/scan`, { code, phase });
         announceScan(data);
         if (data.success && data.code === 'OK') {
-          await queryClient.invalidateQueries({ queryKey: ['event', id] });
-          await queryClient.invalidateQueries({ queryKey: ['events'] });
+          void queryClient.invalidateQueries({ queryKey: ['event', id] });
+          void queryClient.invalidateQueries({ queryKey: ['events'] });
         }
       } catch (err: unknown) {
         const res = (err as { response?: { data?: ScanResult } })?.response?.data;
@@ -307,10 +314,9 @@ export default function EventDetailPage() {
           toast.error('Error al escanear');
         }
       } finally {
-        // Pequeña pausa para que no dispare otra lectura inmediata
         setTimeout(() => {
           scanBusyRef.current = false;
-        }, 600);
+        }, 220);
       }
     },
     [id, canScan, isActive, phase, queryClient]
@@ -552,7 +558,7 @@ export default function EventDetailPage() {
                 <div className="min-w-0">
                   <p className="font-medium truncate">{d.name}</p>
                   <p className="text-xs font-mono text-muted">
-                    {d.internalCode}
+                    {d.label || deviceEventLabel(d)}
                     {!d.onEventList && ' · ya no está en la lista'}
                   </p>
                 </div>
@@ -721,12 +727,18 @@ export default function EventDetailPage() {
               {addingScan ? 'Pausar' : 'Escanear'}
             </Button>
           </div>
-          <BarcodeScanner readerId={`event-add-${id}`} active={addingScan} onScan={handleDraftAddScan} />
+          <BarcodeScanner
+            readerId={`event-add-${id}`}
+            active={addingScan}
+            onScan={handleDraftAddScan}
+            sameCodeCooldownMs={700}
+            betweenCodesMs={120}
+          />
           {lastAdded?.device && (
             <div className="flex items-center gap-2 text-sm text-green-400 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
               <span>
-                {lastAdded.message} · <span className="font-mono">{lastAdded.device.internalCode}</span>
+                {lastAdded.message} · <span className="font-mono">{deviceEventLabel(lastAdded.device)}</span>
               </span>
             </div>
           )}
@@ -822,7 +834,8 @@ export default function EventDetailPage() {
               readerId={`event-scanner-${id}`}
               active={scanning}
               onScan={handleScan}
-              sameCodeCooldownMs={4000}
+              sameCodeCooldownMs={1100}
+              betweenCodesMs={150}
             />
             <p className="text-xs text-muted mt-2 text-center">
               {phase === 'OUTBOUND'
@@ -875,7 +888,7 @@ export default function EventDetailPage() {
                   <p className="text-sm mt-1 text-foreground/90">{lastScan.message}</p>
                   {lastScan.device && (
                     <p className="text-sm text-muted mt-2">
-                      {lastScan.device.name} · <span className="font-mono">{lastScan.device.internalCode}</span>
+                      {lastScan.device.name} · <span className="font-mono">{deviceEventLabel(lastScan.device)}</span>
                     </p>
                   )}
                 </motion.div>
@@ -945,8 +958,7 @@ export default function EventDetailPage() {
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">{item.device.name}</p>
                   <p className="text-xs text-muted font-mono">
-                    {item.device.internalCode}
-                    {item.device.serialNumber ? ` · ${item.device.serialNumber}` : ''}
+                    {item.device.serialNumber?.trim() || 'Sin nº de serie'}
                   </p>
                   <p className="text-xs text-muted mt-0.5">
                     Ubicación: {locationLabel(item.device.location)}

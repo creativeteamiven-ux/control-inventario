@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import LocationSelect from '@/components/LocationSelect';
 import DevicePickerModal from '@/components/DevicePickerModal';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useAuth } from '@/hooks/useAuth';
 import { useLocations } from '@/hooks/useLocations';
 import { cn } from '@/lib/utils';
 import {
@@ -55,8 +56,10 @@ const STATUS_STYLE: Record<string, string> = {
 export default function Events() {
   const queryClient = useQueryClient();
   const { hasPermission } = usePermissions();
+  const { user } = useAuth();
   const { label: locationLabel } = useLocations();
   const canManage = hasPermission('events.manage');
+  const isAdmin = user?.role === 'ADMIN';
 
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
@@ -131,7 +134,11 @@ export default function Events() {
   };
 
   const handleDelete = async (e: EventSummary) => {
-    if (!confirm(`¿Eliminar el borrador "${e.name}"?`)) return;
+    if (!isAdmin) {
+      toast.error('Solo un administrador puede eliminar eventos');
+      return;
+    }
+    if (!confirm(`¿Eliminar el evento "${e.name}"? Esta acción no se puede deshacer.`)) return;
     try {
       await api.delete(`/api/events/${e.id}`);
       await queryClient.invalidateQueries({ queryKey: ['events'] });
@@ -225,30 +232,31 @@ export default function Events() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {canManage && e.status === 'DRAFT' && (
-                  <>
-                    <Button variant="outline" size="sm" asChild>
-                      <Link
-                        to={`/scan?mode=event&eventId=${e.id}`}
-                        onClick={(ev) => {
-                          ev.stopPropagation();
-                          setBuildEventId(e.id);
-                        }}
-                      >
-                        Escanear
-                      </Link>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive"
+                  <Button variant="outline" size="sm" asChild>
+                    <Link
+                      to={`/scan?mode=event&eventId=${e.id}`}
                       onClick={(ev) => {
-                        ev.preventDefault();
-                        void handleDelete(e);
+                        ev.stopPropagation();
+                        setBuildEventId(e.id);
                       }}
                     >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </>
+                      Escanear
+                    </Link>
+                  </Button>
+                )}
+                {isAdmin && e.status !== 'ACTIVE' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive"
+                    title="Eliminar evento (solo admin)"
+                    onClick={(ev) => {
+                      ev.preventDefault();
+                      void handleDelete(e);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 )}
                 <ChevronRight className="h-5 w-5 text-muted group-hover:text-primary" />
               </div>

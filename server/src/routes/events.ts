@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { EventListKind, EventPhase, MovementStatus, MovementType } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler.js';
-import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
+import { authenticate, AuthRequest, requirePermission, requireRole } from '../middleware/auth.js';
 import { assertLocationCode, locationDisplayName, resolveEventDestination, isTemporaryLocation } from '../lib/locations.js';
 import { writeAudit } from '../lib/audit.js';
 import { prisma } from '../lib/prisma.js';
@@ -81,6 +81,21 @@ async function findDeviceByCode(code: string) {
       OR: [{ id: raw }, { internalCode: { equals: raw } }, { serialNumber: { equals: raw } }],
     },
   });
+}
+
+/** Etiqueta visible en eventos: prioriza nº de serie (código de barras de la etiqueta). */
+function devicePublicLabel(device: { serialNumber?: string | null; internalCode: string }) {
+  const sn = device.serialNumber?.trim();
+  return sn || device.internalCode;
+}
+
+function deviceScanPayload(device: { id: string; name: string; internalCode: string; serialNumber?: string | null }) {
+  return {
+    id: device.id,
+    name: device.name,
+    internalCode: device.internalCode,
+    serialNumber: device.serialNumber ?? null,
+  };
 }
 
 async function locationNames() {
@@ -475,6 +490,7 @@ router.get('/:id/stranded', requirePermission('events.view'), async (req, res, n
         id: true,
         name: true,
         internalCode: true,
+        serialNumber: true,
         location: true,
         images: { orderBy: { order: 'asc' }, take: 1 },
       },
@@ -490,6 +506,7 @@ router.get('/:id/stranded', requirePermission('events.view'), async (req, res, n
       fromLocationLabel: locationDisplayName(event.fromLocation, names),
       devices: devices.map((d) => ({
         ...d,
+        label: devicePublicLabel(d),
         onEventList: d.id in originByDevice,
         suggestedReturn: originByDevice[d.id] || event.fromLocation,
         suggestedReturnLabel: locationDisplayName(originByDevice[d.id] || event.fromLocation, names),
@@ -599,7 +616,7 @@ router.post('/:id/add-by-scan', async (req: AuthRequest, res, next) => {
         success: true,
         code: 'ALREADY_ON_LIST',
         message: existing.listId === list.id ? 'Este equipo ya está en la lista' : `Equipo movido a "${list.name}"`,
-        device: { id: device.id, name: device.name, internalCode: device.internalCode },
+        device: deviceScanPayload(device),
         total: current ? eventStats(current.items).total : undefined,
       });
     }
@@ -622,8 +639,8 @@ router.post('/:id/add-by-scan', async (req: AuthRequest, res, next) => {
     res.json({
       success: true,
       code: 'ADDED',
-      message: `${device.internalCode} agregado a "${list.name}"`,
-      device: { id: device.id, name: device.name, internalCode: device.internalCode },
+      message: `${devicePublicLabel(device)} agregado a "${list.name}"`,
+      device: deviceScanPayload(device),
       stats: mapped?.stats,
       total: mapped?.stats?.total,
     });
@@ -693,7 +710,7 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
         success: false,
         code: 'NOT_ON_LIST',
         message: 'Este equipo no está en ninguna lista del evento',
-        device: { id: device.id, name: device.name, internalCode: device.internalCode },
+        device: deviceScanPayload(device),
       });
     }
 
@@ -703,7 +720,7 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
           success: true,
           code: 'ALREADY_SCANNED',
           message: 'Este equipo ya fue verificado',
-          device: { id: device.id, name: device.name, internalCode: device.internalCode },
+          device: deviceScanPayload(device),
           item,
         });
       }
@@ -736,7 +753,7 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
         success: true,
         code: 'OK',
         message: 'Equipo verificado',
-        device: { id: device.id, name: device.name, internalCode: device.internalCode },
+        device: deviceScanPayload(device),
         item: updated[0],
         stats: fresh ? eventStats(fresh.items) : undefined,
       });
@@ -749,7 +766,7 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
         success: false,
         code: 'NOT_OUTBOUND',
         message: 'Este equipo no fue verificado en la salida del evento',
-        device: { id: device.id, name: device.name, internalCode: device.internalCode },
+        device: deviceScanPayload(device),
       });
     }
     if (device.location !== event.toLocation) {
@@ -764,9 +781,7 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
         code: 'WRONG_LOCATION',
         message: `El equipo debe estar en "${toLabel}" (tras autorizar el traslado de salida). En inventario figura en "${locationDisplayName(device.location, locNames)}".`,
         device: {
-          id: device.id,
-          name: device.name,
-          internalCode: device.internalCode,
+          ...deviceScanPayload(device),
           location: device.location,
           locationLabel: locationDisplayName(device.location, locNames),
         },
@@ -779,7 +794,7 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
         success: true,
         code: 'ALREADY_SCANNED',
         message: 'Este equipo ya fue verificado',
-        device: { id: device.id, name: device.name, internalCode: device.internalCode },
+        device: deviceScanPayload(device),
         item,
       });
     }
@@ -807,7 +822,7 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
       success: true,
       code: 'OK',
       message: 'Equipo verificado',
-      device: { id: device.id, name: device.name, internalCode: device.internalCode },
+      device: deviceScanPayload(device),
       item: updated[0],
       stats: fresh ? eventStats(fresh.items) : undefined,
     });
@@ -1005,8 +1020,8 @@ router.post('/:id/confirm-inbound', requirePermission('events.manage'), async (r
   }
 });
 
-/** Eliminar evento */
-router.delete('/:id', requirePermission('events.manage'), async (req: AuthRequest, res, next) => {
+/** Eliminar evento (solo administradores) */
+router.delete('/:id', requireRole('ADMIN'), async (req: AuthRequest, res, next) => {
   try {
     const event = await prisma.event.findUnique({ where: { id: req.params.id } });
     if (!event) throw new AppError(404, 'Evento no encontrado');

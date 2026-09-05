@@ -77,10 +77,15 @@ interface CameraOption {
 
 /** Zona de escaneo ancha y baja, ideal para códigos de barras horizontales. */
 function barcodeScanBox(viewW: number, viewH: number) {
-  const width = Math.floor(viewW * 0.92);
-  const height = Math.floor(Math.min(viewH * 0.32, 140));
+  const width = Math.floor(viewW * 0.94);
+  const height = Math.floor(Math.min(viewH * 0.38, 168));
   return { width, height };
 }
+
+const VIDEO_CONSTRAINTS_BASE = {
+  width: { min: 640, ideal: 1280 },
+  height: { min: 480, ideal: 720 },
+};
 
 interface ScannedDevice {
   id: string;
@@ -107,8 +112,12 @@ interface AddScanResult {
   success: boolean;
   code: string;
   message: string;
-  device?: { id: string; name: string; internalCode: string };
+  device?: { id: string; name: string; internalCode: string; serialNumber?: string | null };
   total?: number;
+}
+
+function deviceEventLabel(d: { serialNumber?: string | null; internalCode: string }) {
+  return d.serialNumber?.trim() || d.internalCode;
 }
 
 type ScanMode = 'lookup' | 'event';
@@ -169,9 +178,9 @@ export default function Scanner() {
         const { data } = await api.post<AddScanResult>(`/api/events/${eventBuildId}/add-by-scan`, { code });
         setLastEventAdd(data);
         if (data.success) {
-          toast.success(data.message, { duration: 1500 });
-          await queryClient.invalidateQueries({ queryKey: ['events'] });
-          await queryClient.invalidateQueries({ queryKey: ['event', eventBuildId] });
+          toast.success(data.message, { duration: 1000 });
+          void queryClient.invalidateQueries({ queryKey: ['events'] });
+          void queryClient.invalidateQueries({ queryKey: ['event', eventBuildId] });
         } else {
           toast.error(data.message);
         }
@@ -273,7 +282,7 @@ export default function Scanner() {
 
       const now = Date.now();
       const prev = lastScanRef.current;
-      if (prev && prev.code === code && now - prev.at < 2500) return;
+      if (prev && prev.code === code && now - prev.at < 1200) return;
       lastScanRef.current = { code, at: now };
 
       await stopCamera();
@@ -331,26 +340,24 @@ export default function Scanner() {
           ? camId
           : {
               facingMode: { ideal: 'environment' },
-              width: { min: 640, ideal: 1920 },
-              height: { min: 480, ideal: 1080 },
+              ...VIDEO_CONSTRAINTS_BASE,
             };
 
         await html5.start(
           cameraSource,
           {
-            fps: 20,
+            fps: 30,
             qrbox: barcodeScanBox,
             disableFlip: false,
+            aspectRatio: 1.333,
             videoConstraints: camId
               ? {
                   deviceId: { exact: camId },
-                  width: { min: 640, ideal: 1920 },
-                  height: { min: 480, ideal: 1080 },
+                  ...VIDEO_CONSTRAINTS_BASE,
                 }
               : {
                   facingMode: { ideal: 'environment' },
-                  width: { min: 640, ideal: 1920 },
-                  height: { min: 480, ideal: 1080 },
+                  ...VIDEO_CONSTRAINTS_BASE,
                 },
           },
           (decodedText) => {
@@ -544,12 +551,15 @@ export default function Scanner() {
                 readerId="event-build-scanner"
                 active={eventScanActive && !!eventBuildId}
                 onScan={handleEventAddScan}
+                sameCodeCooldownMs={700}
+                betweenCodesMs={120}
               />
               {lastEventAdd?.device && (
                 <div className="flex items-center gap-2 text-sm text-green-400 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
                   <span>
-                    {lastEventAdd.message} · <span className="font-mono">{lastEventAdd.device.internalCode}</span>
+                    {lastEventAdd.message} ·{' '}
+                    <span className="font-mono">{deviceEventLabel(lastEventAdd.device)}</span>
                     {lastEventAdd.total != null ? ` · Total: ${lastEventAdd.total}` : ''}
                   </span>
                 </div>
