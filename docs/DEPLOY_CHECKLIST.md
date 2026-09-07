@@ -19,20 +19,26 @@ El despliegue aplica migraciones versionadas con `prisma migrate deploy` (ya no
 se usa `prisma db push`, que sincroniza el esquema sin historial y puede alterar
 columnas en producción).
 
-**Solo la primera vez**, si la base ya tiene tablas creadas con `db push`, hay
-que marcar las migraciones existentes como aplicadas para no intentar recrearlas:
+La base de producción se creó en su día con `db push`, así que sus tablas ya
+existen sin estar registradas como migración. Ese baseline ya está resuelto y no
+hay que repetirlo:
+
+- El esquema inicial **no** vive en `prisma/migrations`, sino en
+  `server/prisma/baseline/0_init.sql`. Está fuera a propósito (ver el README de
+  esa carpeta) y no se aplica en los despliegues.
+- `20260831_events` ya figura como aplicada en `_prisma_migrations`.
+
+Por eso el Build Command solo necesita `prisma migrate deploy`, que aplica las
+migraciones nuevas y nada más.
+
+Si algún día levantas una base **desde cero**, aplica primero
+`server/prisma/baseline/0_init.sql` a mano y después marca la de eventos como
+aplicada, antes del primer deploy:
 
 ```bash
 cd server
-# con DATABASE_URL apuntando a producción
-npx prisma migrate resolve --applied 0_init
 npx prisma migrate resolve --applied 20260831_events
-npx prisma migrate deploy
 ```
-
-No hace falta ejecutarlos a mano: el Build Command del backend (ver el apartado
-siguiente) ya los incluye de forma idempotente, con los `resolve` envueltos en
-`|| true` para que no fallen cuando las migraciones ya estén registradas.
 
 Para cambios de esquema nuevos: `npx prisma migrate dev --name descripcion` en
 local y commit de la carpeta generada en `server/prisma/migrations/`.
@@ -50,7 +56,7 @@ local y commit de la carpeta generada en `server/prisma/migrations/`.
   porque `packages/server` no existe):
 
   ```bash
-  cd packages/shared && npm install && npm run build && cd ../../server && npm install && npx prisma generate && (npx prisma migrate resolve --applied 0_init || true) && (npx prisma migrate resolve --applied 20260831_events || true) && npx prisma migrate deploy && npm run build
+  cd packages/shared && npm install && npm run build && cd ../../server && npm install && npx prisma generate && npx prisma migrate deploy && npm run build
   ```
 
 - **Start Command:** `cd server && node index.js`. No debe incluir

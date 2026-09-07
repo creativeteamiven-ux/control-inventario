@@ -11,14 +11,12 @@ services:
     runtime: node
     name: control-inventario-api
     region: oregon
-    # Migraciones versionadas en lugar de `db push`: los dos `migrate resolve`
-    # marcan como aplicadas las migraciones que ya existen en la base (baseline)
-    # y fallan sin consecuencias si ya estaban registradas.
+    # Migraciones versionadas en lugar de `db push`. El esquema inicial no está
+    # en prisma/migrations (ver server/prisma/baseline/README.md), así que
+    # `migrate deploy` solo aplica lo que falte de verdad.
     buildCommand: >-
       cd packages/shared && npm install && npm run build &&
       cd ../../server && npm install && npx prisma generate &&
-      (npx prisma migrate resolve --applied 0_init || true) &&
-      (npx prisma migrate resolve --applied 20260831_events || true) &&
       npx prisma migrate deploy && npm run build
     startCommand: cd server && node index.js
     healthCheckPath: /api/health
