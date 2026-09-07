@@ -30,8 +30,9 @@ npx prisma migrate resolve --applied 20260831_events
 npx prisma migrate deploy
 ```
 
-El `buildCommand` de `render.yaml` ya ejecuta esos tres pasos de forma
-idempotente, así que en despliegues posteriores no hay que hacer nada manual.
+No hace falta ejecutarlos a mano: el Build Command del backend (ver el apartado
+siguiente) ya los incluye de forma idempotente, con los `resolve` envueltos en
+`|| true` para que no fallen cuando las migraciones ya estén registradas.
 
 Para cambios de esquema nuevos: `npx prisma migrate dev --name descripcion` en
 local y commit de la carpeta generada en `server/prisma/migrations/`.
@@ -40,8 +41,22 @@ local y commit de la carpeta generada en `server/prisma/migrations/`.
 
 ## 2. Render (backend)
 
-- Repositorio conectado en [Render](https://dashboard.render.com). Con
-  `render.yaml` el servicio se configura solo.
+- Repositorio conectado en [Render](https://dashboard.render.com).
+- **Atención:** el servicio actual se creó a mano, no como Blueprint, así que
+  Render **no lee `render.yaml`**. Los comandos hay que mantenerlos en Settings
+  → Build & Deploy, y `render.yaml` solo sirve de referencia (o para recrear el
+  servicio como Blueprint más adelante).
+- **Build Command** (una sola línea; sube dos niveles desde `packages/shared`,
+  porque `packages/server` no existe):
+
+  ```bash
+  cd packages/shared && npm install && npm run build && cd ../../server && npm install && npx prisma generate && (npx prisma migrate resolve --applied 0_init || true) && (npx prisma migrate resolve --applied 20260831_events || true) && npx prisma migrate deploy && npm run build
+  ```
+
+- **Start Command:** `cd server && node index.js`. No debe incluir
+  `prisma db push`: parchearía el esquema en cada arranque y anularía el
+  historial de migraciones.
+- **Root Directory:** vacío. El build necesita ver `packages/shared`.
 - **Environment variables** del Web Service (Settings → Environment):
 
   | Variable | Obligatoria | Valor |
