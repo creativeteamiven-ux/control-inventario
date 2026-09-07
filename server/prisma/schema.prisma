@@ -176,10 +176,10 @@ model Device {
   eventItems     EventItem[]
 
   // Campos combinados en casi todos los listados y filtros del inventario.
+  // categoryId no se indexa aquí: su clave foránea ya crea el índice en MySQL.
   @@index([deletedAt])
   @@index([status])
   @@index([location])
-  @@index([categoryId])
   @@index([deletedAt, status])
 }
 
@@ -190,8 +190,6 @@ model DeviceImage {
   url       String   @db.VarChar(1000)
   order     Int      @default(0)
   createdAt DateTime @default(now())
-
-  @@index([deviceId])
 }
 
 model Document {
@@ -202,8 +200,6 @@ model Document {
   type      String   // factura, manual, garantia
   url       String   @db.VarChar(1000)
   createdAt DateTime @default(now())
-
-  @@index([deviceId])
 }
 
 model Movement {
@@ -226,7 +222,6 @@ model Movement {
 
   @@index([status])
   @@index([eventId])
-  @@index([deviceId])
   @@index([createdAt])
   @@index([status, createdAt])
 }
@@ -247,7 +242,6 @@ model Maintenance {
   user        User      @relation(fields: [userId], references: [id])
   createdAt   DateTime  @default(now())
 
-  @@index([deviceId])
   @@index([status])
   @@index([startDate])
 }
@@ -269,7 +263,6 @@ model LoanRecord {
   notes           String?   @db.Text
   createdAt       DateTime  @default(now())
 
-  @@index([deviceId])
   @@index([status])
   @@index([expectedReturn])
 }
