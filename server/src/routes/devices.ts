@@ -320,6 +320,13 @@ router.patch('/bulk', requirePermission('inventory.edit'), async (req: AuthReque
     if (!Array.isArray(deviceIds) || deviceIds.length === 0) {
       throw new AppError(400, 'deviceIds debe ser un array con al menos un id');
     }
+    // Tope para que una selección de "todo el inventario" no genere una transacción interminable.
+    if (deviceIds.length > 500) {
+      throw new AppError(400, 'Máximo 500 equipos por operación masiva');
+    }
+    if (!deviceIds.every((id) => typeof id === 'string' && id.length > 0)) {
+      throw new AppError(400, 'deviceIds contiene valores inválidos');
+    }
     const update: Record<string, unknown> = {};
     if (status != null) {
       if (!validStatuses.includes(String(status))) {
@@ -418,7 +425,7 @@ router.post('/', requirePermission('inventory.create'), async (req: AuthRequest,
       include: { category: true },
     });
     await writeAudit(req, 'Device', device.id, 'CREATE', { name: device.name, internalCode: device.internalCode });
-    res.status(201).json(device);
+    res.status(201).json(stripCostFromResponse(device, req.user!.permissions ?? []));
   } catch (e) {
     next(e);
   }
@@ -438,7 +445,7 @@ router.patch('/:id', requirePermission('inventory.edit'), async (req: AuthReques
       include: { category: true, images: true },
     });
     await writeAudit(req, 'Device', device.id, 'UPDATE', parsed.data);
-    res.json(device);
+    res.json(stripCostFromResponse(device, req.user!.permissions ?? []));
   } catch (e) {
     next(e);
   }

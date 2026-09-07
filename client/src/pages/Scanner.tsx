@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
+import { fileUrl } from '@/lib/fileUrl';
 import { addToStoredCart, getStoredCart } from '@/lib/transferCart';
 import { getBuildEventId, setBuildEventId } from '@/lib/eventBuild';
 import { Button } from '@/components/ui/button';
@@ -370,7 +371,7 @@ export default function Scanner() {
             >
               <div className="relative h-40 bg-card-hover">
                 {device.images?.[0]?.url ? (
-                  <img src={device.images[0].url} alt={device.name} className="h-full w-full object-cover" />
+                  <img src={fileUrl(device.images[0].url)} alt={device.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                 ) : (
                   <div className="h-full w-full flex flex-col items-center justify-center gap-2 bg-black/40">
                     <Package className="h-12 w-12 text-muted" />

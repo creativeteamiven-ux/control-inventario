@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { setCorsIfAllowed } from '../lib/cors.js';
 
 export class AppError extends Error {
   constructor(
@@ -8,20 +9,6 @@ export class AppError extends Error {
   ) {
     super(message);
     Object.setPrototypeOf(this, AppError.prototype);
-  }
-}
-
-const PRODUCTION_DOMAIN = 'https://thewarehouse.diosfuentedepoder.com';
-
-function setCorsIfAllowed(res: Response, origin: string | undefined) {
-  if (!origin) return;
-  const allowed =
-    origin === 'http://localhost:5173' ||
-    origin === PRODUCTION_DOMAIN ||
-    (origin.startsWith('https://') && origin.includes('control-inventario-02') && origin.endsWith('.vercel.app'));
-  if (allowed) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
   }
 }
 

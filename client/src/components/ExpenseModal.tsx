@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
+import { fileUrl } from '@/lib/fileUrl';
 import toast from 'react-hot-toast';
 import { Paperclip, X } from 'lucide-react';
 import { EXPENSE_CATEGORIES, CURRENCIES } from '@/lib/expenseLabels';
@@ -234,7 +235,7 @@ export default function ExpenseModal({ open, onOpenChange, expense }: ExpenseMod
             <label className="block text-sm font-medium mb-1.5">Comprobante (foto o PDF)</label>
             {form.receiptUrl ? (
               <div className="flex items-center gap-2 text-sm">
-                <a href={form.receiptUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-primary hover:underline">
+                <a href={fileUrl(form.receiptUrl)} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-primary hover:underline">
                   <Paperclip className="h-4 w-4" /> Ver comprobante
                 </a>
                 <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => setForm({ ...form, receiptUrl: '' })}>

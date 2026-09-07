@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search, Plus } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import type { CartDevice } from './TransferCart';
 
 interface DevicePickerModalProps {
@@ -34,14 +35,15 @@ export default function DevicePickerModal({
   alreadyInLabel = 'Ya agregado',
 }: DevicePickerModalProps) {
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const { data, isLoading } = useQuery({
-    queryKey: ['devices', 'picker', search, categoryId ?? ''],
+    queryKey: ['devices', 'picker', debouncedSearch, categoryId ?? ''],
     queryFn: async () => {
       const { data } = await api.get('/api/devices', {
         params: {
-          search: search || undefined,
+          search: debouncedSearch || undefined,
           categoryId: categoryId || undefined,
           page: 1,
           limit: 100,

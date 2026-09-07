@@ -48,6 +48,20 @@ export default defineConfig(({ mode }) => {
     optimizeDeps: {
       exclude: ['@undecaf/zbar-wasm'],
     },
+    build: {
+      rollupOptions: {
+        output: {
+          // Separar las librerías del código propio: al desplegar solo se
+          // invalida la caché de la app, no la de React/Query/Recharts.
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+            'vendor-query': ['@tanstack/react-query', 'axios'],
+            'vendor-charts': ['recharts'],
+            'vendor-motion': ['framer-motion'],
+          },
+        },
+      },
+    },
     server: {
       host: true,
       port: 5173,

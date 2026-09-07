@@ -24,6 +24,8 @@ router.get('/', requirePermission('maintenance.view'), async (req, res, next) =>
         user: { select: { name: true } },
       },
       orderBy: { startDate: 'desc' },
+      // Tope de seguridad mientras la vista no pagine.
+      take: 1000,
     });
     const perms = (req as AuthRequest).user?.permissions ?? [];
     res.json(stripCostFromResponse(items, perms));

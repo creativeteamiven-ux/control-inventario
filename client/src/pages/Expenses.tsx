@@ -5,6 +5,7 @@ import { Receipt, Plus, Pencil, Trash2, Paperclip, Download } from 'lucide-react
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { api } from '@/lib/api';
+import { fileUrl } from '@/lib/fileUrl';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -244,7 +245,7 @@ export default function Expenses() {
                   </dl>
                   <div className="flex items-center gap-2">
                     {e.receiptUrl && (
-                      <a href={e.receiptUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm text-primary hover:underline">
+                      <a href={fileUrl(e.receiptUrl)} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-sm text-primary hover:underline">
                         <Paperclip className="h-4 w-4" /> Comprobante
                       </a>
                     )}
@@ -293,7 +294,7 @@ export default function Expenses() {
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-end gap-1">
                         {e.receiptUrl && (
-                          <a href={e.receiptUrl} target="_blank" rel="noreferrer" title="Ver comprobante" className="p-2 text-muted hover:text-primary">
+                          <a href={fileUrl(e.receiptUrl)} target="_blank" rel="noreferrer" title="Ver comprobante" className="p-2 text-muted hover:text-primary">
                             <Paperclip className="h-4 w-4" />
                           </a>
                         )}

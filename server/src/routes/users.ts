@@ -4,7 +4,12 @@ import bcrypt from 'bcryptjs';
 import { createUserSchema, updateUserSchema } from '@soundvault/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
-import { getEffectivePermissions, getDefaultPermissionsForRole, PERMISSIONS } from '../lib/permissions.js';
+import {
+  getEffectivePermissions,
+  getDefaultPermissionsForRole,
+  sanitizePermissions,
+  PERMISSIONS,
+} from '../lib/permissions.js';
 import { writeAudit } from '../lib/audit.js';
 
 const router = Router();
@@ -65,10 +70,16 @@ router.post('/', requirePermission('users.create'), async (req: AuthRequest, res
   try {
     const parsed = createUserSchema.safeParse(req.body);
     if (!parsed.success) throw new AppError(400, parsed.error.errors[0]?.message || 'Datos inválidos');
+    const actorRole = req.user!.role;
+    if (parsed.data.role === 'ADMIN' && actorRole !== 'ADMIN') {
+      throw new AppError(403, 'Solo un administrador puede crear usuarios con rol ADMIN');
+    }
     const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
     if (existing) throw new AppError(400, 'El email ya está registrado');
     const hashedPassword = await bcrypt.hash(parsed.data.password, 10);
-    const permissions = parsed.data.permissions ?? getEffectivePermissions(parsed.data.role, null);
+    const permissions = parsed.data.permissions
+      ? sanitizePermissions(parsed.data.permissions, actorRole)
+      : getEffectivePermissions(parsed.data.role, null);
     const user = await prisma.user.create({
       data: {
         name: parsed.data.name,
@@ -91,12 +102,22 @@ router.patch('/:id', requirePermission('users.edit'), async (req: AuthRequest, r
   try {
     const parsed = updateUserSchema.safeParse(req.body);
     if (!parsed.success) throw new AppError(400, parsed.error.errors[0]?.message || 'Datos inválidos');
+    const actorRole = req.user!.role;
+    const target = await prisma.user.findUnique({
+      where: { id: req.params.id },
+      select: { id: true, role: true },
+    });
+    if (!target) throw new AppError(404, 'Usuario no encontrado');
+    // Solo un ADMIN puede otorgar el rol ADMIN o modificar una cuenta que ya lo tiene.
+    if (actorRole !== 'ADMIN' && (parsed.data.role === 'ADMIN' || target.role === 'ADMIN')) {
+      throw new AppError(403, 'Solo un administrador puede modificar cuentas de administrador');
+    }
     const update: Record<string, unknown> = { ...parsed.data };
     if (parsed.data.password) {
       update.password = await bcrypt.hash(parsed.data.password, 10);
     }
     if (parsed.data.permissions !== undefined) {
-      update.permissions = parsed.data.permissions;
+      update.permissions = sanitizePermissions(parsed.data.permissions, actorRole);
     }
     const user = await prisma.user.update({
       where: { id: req.params.id },

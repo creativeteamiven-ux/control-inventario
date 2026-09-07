@@ -1,9 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { AppError } from './errorHandler.js';
-import { getEffectivePermissions } from '../lib/permissions.js';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'soundvault-secret-change-in-production';
+import { JWT_SECRET, JWT_ALGORITHMS } from '../lib/secrets.js';
 
 export interface JwtPayload {
   userId: string;
@@ -27,7 +25,9 @@ export function authenticate(
   }
   const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    const decoded = jwt.verify(token, JWT_SECRET, {
+      algorithms: [...JWT_ALGORITHMS],
+    }) as JwtPayload;
     req.user = decoded;
     next();
   } catch {

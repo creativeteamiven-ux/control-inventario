@@ -1,60 +1,76 @@
 # Checklist: Subir a producción
 
+Arquitectura actual: **base de datos MySQL/TiDB** + **API en Render** + **frontend en Vercel**.
+
+> El esquema de Prisma usa `provider = "mysql"`. Los documentos que hablan de
+> Neon y PostgreSQL corresponden a una etapa anterior del proyecto.
+
 ## Orden recomendado
 
-1. **Neon (base de datos)** – asegurar que el esquema está actualizado.
+1. **Base de datos** – aplicar migraciones.
 2. **Render (backend)** – desplegar API.
 3. **Vercel (frontend)** – desplegar cliente y apuntar a la API.
 
 ---
 
-## 1. Neon (base de datos)
+## 1. Base de datos (MySQL / TiDB)
 
-- Entra a [Neon Console](https://console.neon.tech) y copia la **Connection string** (Pooled) del proyecto. La usarás como `DATABASE_URL` en Render.
-- Si cambiaste el esquema Prisma (`server/prisma/schema.prisma`), aplica los cambios en Neon:
+El despliegue aplica migraciones versionadas con `prisma migrate deploy` (ya no
+se usa `prisma db push`, que sincroniza el esquema sin historial y puede alterar
+columnas en producción).
 
-  Desde tu máquina (con la URL de producción):
+**Solo la primera vez**, si la base ya tiene tablas creadas con `db push`, hay
+que marcar las migraciones existentes como aplicadas para no intentar recrearlas:
 
-  ```bash
-  cd server
-  set DATABASE_URL=postgresql://...tu-url-neon...
-  npx prisma db push
-  ```
+```bash
+cd server
+# con DATABASE_URL apuntando a producción
+npx prisma migrate resolve --applied 0_init
+npx prisma migrate resolve --applied 20260831_events
+npx prisma migrate deploy
+```
 
-  O con un archivo `.env.production` en `server/` que solo tenga `DATABASE_URL` y luego:
+El `buildCommand` de `render.yaml` ya ejecuta esos tres pasos de forma
+idempotente, así que en despliegues posteriores no hay que hacer nada manual.
 
-  ```bash
-  cd server
-  npx dotenv -e .env.production -- npx prisma db push
-  ```
-
-  (Si usas `prisma migrate`, en su lugar: `npx prisma migrate deploy`.)
-
-- No hace falta crear otro proyecto en Neon; usa el mismo que ya tengas.
+Para cambios de esquema nuevos: `npx prisma migrate dev --name descripcion` en
+local y commit de la carpeta generada en `server/prisma/migrations/`.
 
 ---
 
 ## 2. Render (backend)
 
-- Repositorio conectado en [Render](https://dashboard.render.com). Si usas `render.yaml`, el servicio ya puede estar creado.
+- Repositorio conectado en [Render](https://dashboard.render.com). Con
+  `render.yaml` el servicio se configura solo.
 - **Environment variables** del Web Service (Settings → Environment):
 
-  | Variable        | Valor |
-  |-----------------|--------|
-  | `DATABASE_URL`  | Connection string de Neon (Pooled). |
-  | `JWT_SECRET`    | String aleatorio largo (ej. `openssl rand -base64 32`). |
-  | `REFRESH_SECRET`| Otro string aleatorio distinto. |
-  | `CLIENT_URL`    | URL del frontend para CORS. Producción: `https://thewarehouse.diosfuentedepoder.com` (sin barra final). |
-  | `NODE_ENV`      | `production` (opcional; Render suele inyectarlo). |
+  | Variable | Obligatoria | Valor |
+  |----------|-------------|-------|
+  | `DATABASE_URL` | Sí | Cadena de conexión MySQL/TiDB. |
+  | `JWT_SECRET` | Sí | Aleatorio, mínimo 16 caracteres (`openssl rand -base64 32`). |
+  | `REFRESH_SECRET` | Sí | Otro distinto. |
+  | `CLIENT_URL` | Sí | URL(es) del frontend separadas por coma, sin barra final. |
+  | `CLOUDINARY_URL` | Sí | El disco de Render es efímero: sin esto se pierden imágenes y comprobantes en cada despliegue, y la API rechaza las subidas. |
+  | `PUBLIC_API_URL` | Recomendada | URL pública del backend, para que las rutas `/uploads` sean absolutas. |
+  | `APPROVAL_SECRET` | Recomendada | Secreto propio de los tokens de PIN/biometría. Si falta, se deriva de `JWT_SECRET`. |
+  | `PREVIEW_ORIGIN_PATTERN` | Opcional | Fragmento del nombre del proyecto en Vercel para permitir previews. |
+  | `ALERT_CRON_SECRET` | Opcional | Para el cron externo de alertas (cabecera `x-cron-secret`). |
+  | `NODE_ENV` | — | `production` (Render suele inyectarlo). |
 
-- **Build / Start:** según [docs/RENDER.md](RENDER.md): Root Directory vacío, Build: `cd packages/shared && npm install && npm run build && cd ../../server && npm install && npx prisma generate && npm run build`, Start: `cd server && node index.js`.
-- Tras hacer **Deploy** (o push al repo si está el auto-deploy), anota la URL del API, ej. `https://control-inventario-api.onrender.com`.
+- El arranque **falla a propósito** si `JWT_SECRET` o `REFRESH_SECRET` faltan o
+  son demasiado cortos.
+- Tras el **Deploy**, anota la URL del API, por ejemplo
+  `https://control-inventario-api.onrender.com`.
+- **Plan gratuito:** el servicio se duerme tras unos 15 minutos sin tráfico (la
+  primera petición tarda entre 30 y 60 segundos) y el cron interno de alertas no
+  corre mientras duerme. Con plan Starter o un cron externo que llame a
+  `/api/health` se evita.
 
 ---
 
 ## 3. Vercel (frontend)
 
-- Crea (o usa) un **proyecto en Vercel** con el mismo repo de GitHub.
+- Proyecto en Vercel con el mismo repositorio.
 - **Configuración del proyecto:**
   - **Root Directory:** `client`
   - **Framework Preset:** Vite
@@ -63,28 +79,43 @@
   - **Output Directory:** `dist`
 - **Environment variable** (Production y Preview):
 
-  | Variable       | Valor |
-  |----------------|--------|
-  | `VITE_API_URL` | URL del backend en Render, ej. `https://control-inventario-api.onrender.com` (sin barra final). |
+  | Variable | Valor |
+  |----------|-------|
+  | `VITE_API_URL` | URL del backend en Render, sin barra final. |
 
-- **Dominio de producción:** en Vercel → Settings → Domains, añade `thewarehouse.diosfuentedepoder.com` y configura el DNS según las instrucciones de Vercel.
-- Guarda y haz **Deploy**. La URL del sitio en producción será `https://thewarehouse.diosfuentedepoder.com`.
+- **Dominio de producción:** Settings → Domains.
 
 ---
 
 ## 4. Cerrar el círculo (CORS)
 
-- En **Render** → tu Web Service → **Environment**: revisa que `CLIENT_URL` sea exactamente la URL del frontend (producción: `https://thewarehouse.diosfuentedepoder.com`), sin barra final.
-- Si cambiaste `CLIENT_URL`, haz **Manual Deploy** en Render para que tome la variable.
+- `CLIENT_URL` en Render debe coincidir exactamente con la URL del frontend, sin
+  barra final. Admite varias separadas por coma.
+- Para las previews de Vercel, define `PREVIEW_ORIGIN_PATTERN` con un fragmento
+  del nombre del proyecto (ya no hay dominios escritos en el código).
+- Si cambias cualquiera de las dos, haz **Manual Deploy** para que Render tome la
+  variable.
+
+---
+
+## 5. Comprobación posterior
+
+```bash
+curl https://tu-api.onrender.com/api/health          # {"ok":true,"db":"connected"}
+curl https://tu-api.onrender.com/api/health/events   # {"ok":true,"events":"ready"}
+```
+
+Después, en la aplicación: iniciar sesión, abrir el inventario, subir una imagen
+y comprobar que se ve (confirma que Cloudinary está bien configurado).
 
 ---
 
 ## Resumen
 
-| Dónde   | Qué hacer |
-|---------|-----------|
-| **Neon**  | Copiar connection string; si hay cambios en schema, ejecutar `prisma db push` (o `migrate deploy`) con `DATABASE_URL` de producción. |
-| **Render**| Variables: `DATABASE_URL`, `JWT_SECRET`, `REFRESH_SECRET`, `CLIENT_URL`. Deploy del backend. |
-| **Vercel**| Root: `client`. Variable `VITE_API_URL` = URL del backend en Render. Deploy del frontend. |
+| Dónde | Qué hacer |
+|-------|-----------|
+| **Base de datos** | Baseline la primera vez; después `migrate deploy` corre solo en el build. |
+| **Render** | Variables obligatorias incluida `CLOUDINARY_URL`. Deploy del backend. |
+| **Vercel** | Root `client`, `VITE_API_URL` = URL del backend. Deploy del frontend. |
 
-Después de hacer push al repo, Render y Vercel suelen redesplegar solos si tienen auto-deploy activado.
+Con auto-deploy activado, un push a `main` redespliega Render y Vercel.

@@ -18,6 +18,15 @@ const CODE_PREFIXES: Record<string, string> = {
 };
 
 async function main() {
+  // Este seed borra todas las tablas: nunca debe correr contra producción.
+  const isProduction =
+    process.env.NODE_ENV === 'production' || !!process.env.RENDER || !!process.env.VERCEL;
+  if (isProduction && process.env.ALLOW_DESTRUCTIVE_SEED !== 'yes') {
+    throw new Error(
+      'Seed bloqueado: borra todos los datos. Si realmente quieres ejecutarlo, define ALLOW_DESTRUCTIVE_SEED=yes.'
+    );
+  }
+
   // Limpiar en orden por foreign keys
   await prisma.auditLog.deleteMany();
   await prisma.loanRecord.deleteMany();

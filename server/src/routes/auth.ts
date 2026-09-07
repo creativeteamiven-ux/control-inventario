@@ -7,10 +7,9 @@ import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { getEffectivePermissions } from '../lib/permissions.js';
 import { writeAudit } from '../lib/audit.js';
+import { JWT_SECRET, REFRESH_SECRET, JWT_ALGORITHMS } from '../lib/secrets.js';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'soundvault-secret-change-in-production';
-const REFRESH_SECRET = process.env.REFRESH_SECRET || 'soundvault-refresh-secret';
 const ACCESS_EXPIRY = '15m';
 const REFRESH_EXPIRY = '7d';
 
@@ -60,7 +59,10 @@ router.post('/refresh', async (req, res, next) => {
   try {
     const { refreshToken } = req.body;
     if (!refreshToken) throw new AppError(400, 'Refresh token requerido');
-    const decoded = jwt.verify(refreshToken, REFRESH_SECRET) as { userId: string; email: string; role: string };
+    const decoded = jwt.verify(refreshToken, REFRESH_SECRET, {
+      algorithms: [...JWT_ALGORITHMS],
+    }) as { userId: string; email: string; role: string; type?: string };
+    if (decoded.type !== 'refresh') throw new AppError(401, 'Token de refresco inválido');
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
       select: { id: true, email: true, role: true, permissions: true },

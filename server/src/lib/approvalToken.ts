@@ -1,13 +1,25 @@
 import jwt from 'jsonwebtoken';
 import { AppError } from '../middleware/errorHandler.js';
+import { APPROVAL_SECRET, JWT_ALGORITHMS } from './secrets.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'soundvault-secret-change-in-production';
 const PURPOSE = 'movement_approve';
 
 export type ApprovalMethod = 'pin' | 'webauthn';
 
 export function issueApprovalToken(userId: string, method: ApprovalMethod): string {
-  return jwt.sign({ userId, purpose: PURPOSE, method }, JWT_SECRET, { expiresIn: '3m' });
+  return jwt.sign({ userId, purpose: PURPOSE, method }, APPROVAL_SECRET, {
+    expiresIn: '3m',
+    algorithm: 'HS256',
+  });
+}
+
+/** Igual que assertApprovalToken pero devuelve null en lugar de lanzar. */
+export function readApprovalToken(token: unknown, expectedUserId: string): ApprovalMethod | null {
+  try {
+    return assertApprovalToken(token, expectedUserId);
+  } catch {
+    return null;
+  }
 }
 
 export function assertApprovalToken(token: unknown, expectedUserId: string): ApprovalMethod {
@@ -15,7 +27,9 @@ export function assertApprovalToken(token: unknown, expectedUserId: string): App
     throw new AppError(401, 'Debes confirmar con PIN o biometría antes de autorizar');
   }
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as {
+    const decoded = jwt.verify(token, APPROVAL_SECRET, {
+      algorithms: [...JWT_ALGORITHMS],
+    }) as {
       userId?: string;
       purpose?: string;
       method?: ApprovalMethod;

@@ -7,6 +7,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import compression from 'compression';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -36,6 +37,7 @@ import { startAlertScheduler } from './lib/scheduler.js';
 import { ensureEventTables } from './lib/ensureEventTables.js';
 import { ensureSchemaCompat } from './lib/ensureSchemaCompat.js';
 import { ensureAuthSecurity } from './lib/ensureAuthSecurity.js';
+import { isAllowedOrigin, setCorsIfAllowed, allowedOrigins } from './lib/cors.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // En Vercel (Root Directory = server) no hay carpeta padre; cargar .env desde el mismo directorio que index.js
@@ -87,26 +89,13 @@ const authLimiter = rateLimit({
   message: { error: 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.' },
 });
 
-// CORS: permitir CLIENT_URL (puede ser varias separadas por coma) y previews de Vercel del frontend
-const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
-const PRODUCTION_DOMAIN = 'https://thewarehouse.diosfuentedepoder.com';
-const isAllowedOrigin = (origin: string | undefined): boolean => {
-  if (!origin) return true;
-  if (allowedOrigins.includes(origin)) return true;
-  if (origin === PRODUCTION_DOMAIN) return true;
-  // Producción y previews de Vercel del frontend (cualquier subdominio que contenga el nombre del proyecto)
-  if (
-    origin.startsWith('https://') &&
-    origin.includes('control-inventario-02') &&
-    origin.endsWith('.vercel.app')
-  ) {
-    return true;
-  }
-  return false;
-};
+const pinLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos de PIN. Espera unos minutos e inténtalo de nuevo.' },
+});
 
 // Preflight OPTIONS primero: en Vercel serverless el preflight debe recibir cabeceras CORS explícitas
 app.options('*', (req, res) => {
@@ -131,30 +120,33 @@ app.use(
     allowedHeaders: ['Content-Type', 'Authorization'],
   })
 );
-app.use(express.json());
+app.use(compression());
+app.use(express.json({ limit: '2mb' }));
 
-// Diagnóstico: comprobar que la API y la DB responden
+/**
+ * Health check para el balanceador: solo comprueba conexión a la base.
+ * El estado de las tablas de eventos se consulta aparte para que un problema
+ * en ese módulo no marque todo el servicio como caído.
+ */
 app.get('/api/health', async (_req, res) => {
-  const origin = _req.headers.origin;
-  if (origin && isAllowedOrigin(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-  }
+  setCorsIfAllowed(res, _req.headers.origin);
   try {
     await prisma.$queryRaw`SELECT 1`;
-    let eventsReady = false;
-    try {
-      await prisma.event.count();
-      eventsReady = true;
-    } catch (evErr) {
-      const msg = (evErr as Error).message;
-      return res.status(503).json({ ok: false, db: 'connected', events: 'missing', message: msg });
-    }
-    res.json({ ok: true, db: 'connected', events: eventsReady ? 'ready' : 'missing' });
+    res.json({ ok: true, db: 'connected' });
   } catch (e) {
-    const err = e as Error;
-    console.error('[Health] DB error:', err.message);
-    res.status(500).json({ ok: false, db: 'error', message: err.message });
+    console.error('[Health] DB error:', (e as Error).message);
+    res.status(503).json({ ok: false, db: 'error' });
+  }
+});
+
+app.get('/api/health/events', async (_req, res) => {
+  setCorsIfAllowed(res, _req.headers.origin);
+  try {
+    await prisma.event.count();
+    res.json({ ok: true, events: 'ready' });
+  } catch (e) {
+    console.error('[Health] Events error:', (e as Error).message);
+    res.status(503).json({ ok: false, events: 'missing' });
   }
 });
 
@@ -175,6 +167,8 @@ app.set('trust proxy', 1);
 app.use('/api', generalLimiter);
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/refresh', authLimiter);
+app.use('/api/security/pin/verify', pinLimiter);
+app.use('/api/security/pin', pinLimiter);
 app.use('/api/auth', authRouter);
 app.use('/api/devices', devicesRouter);
 app.use('/api/categories', categoriesRouter);
@@ -195,21 +189,29 @@ app.use('/api/audit', auditRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/security', securityRouter);
 
-// Archivos estáticos (uploads)
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Archivos estáticos (uploads). Nombres con UUID, así que se pueden cachear largo.
+app.use(
+  '/uploads',
+  express.static(path.join(__dirname, 'uploads'), {
+    maxAge: '7d',
+    immutable: true,
+    fallthrough: true,
+  })
+);
 
 // 404 con CORS para que el navegador no bloquee por política CORS
 app.use((req, res) => {
-  const origin = req.headers.origin;
-  if (origin && isAllowedOrigin(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-  }
+  setCorsIfAllowed(res, req.headers.origin);
   res.status(404).json({ error: 'No encontrado', path: req.path });
 });
 
 app.use(errorHandler);
 
+/**
+ * En producción un fallo aquí deja la API a medias, así que se registra como
+ * crítico y se aborta el arranque para que el orquestador reintente en lugar de
+ * servir tráfico con un esquema incompleto.
+ */
 async function bootDb() {
   try {
     console.log('[DB] Verificando schema y tablas de eventos...');
@@ -218,8 +220,24 @@ async function bootDb() {
     await ensureAuthSecurity(prisma);
     console.log('[DB] Schema y tablas de eventos OK');
   } catch (err) {
-    console.error('[DB] Error en boot DB:', (err as Error).message);
+    console.error('[DB] Error CRÍTICO en boot DB:', (err as Error).message);
+    if (isProduction) throw err;
   }
+}
+
+// Sin estos manejadores, una promesa rechazada puede tumbar el proceso sin rastro.
+process.on('unhandledRejection', (reason) => {
+  console.error('[Proceso] unhandledRejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[Proceso] uncaughtException:', err);
+  void prisma.$disconnect().finally(() => process.exit(1));
+});
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.on(signal, () => {
+    console.log(`[Proceso] ${signal} recibido, cerrando conexiones...`);
+    void prisma.$disconnect().finally(() => process.exit(0));
+  });
 }
 
 // En Vercel la app se exporta y la ejecuta el runtime serverless; localmente arrancamos el servidor

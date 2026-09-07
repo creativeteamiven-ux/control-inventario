@@ -102,12 +102,18 @@ export default function Movements() {
     }
   };
 
-  const handleConfirmImport = async () => {
+  const handleConfirmImport = () => {
+    if (!fileToImport) return;
+    setAuthModal({ mode: 'import' });
+  };
+
+  const runImport = async (approvalToken: string) => {
     if (!fileToImport) return;
     setImporting(true);
     try {
       const formData = new FormData();
       formData.append('file', fileToImport);
+      formData.append('approvalToken', approvalToken);
       const { data } = await api.post<{ success: number; errors?: { row: number; message: string }[] }>('/api/import/movements', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -125,13 +131,22 @@ export default function Movements() {
     }
   };
 
-  const handleRegisterFromCart = async () => {
+  /**
+   * El traslado cambia la ubicación del equipo, así que se confirma con PIN o
+   * biometría igual que la autorización de un pendiente. Sin confirmación el
+   * backend lo dejaría en espera de aprobación.
+   */
+  const handleRegisterFromCart = () => {
     const ids = selectedCartIds.size > 0 ? [...selectedCartIds] : cart.map((d) => d.id);
     if (ids.length === 0) return;
     if (!manualForm.reason.trim()) {
       toast.error('Escribe la razón del movimiento');
       return;
     }
+    setAuthModal({ mode: 'register', ids });
+  };
+
+  const registerMovements = async (ids: string[], approvalToken: string) => {
     setManualSubmitting(true);
     try {
       const movements = ids.map((deviceId) => ({
@@ -141,10 +156,15 @@ export default function Movements() {
         fromLocation: manualForm.fromLocation || undefined,
         toLocation: manualForm.toLocation || undefined,
       }));
-      const { data } = await api.post<{ created: number; errors: { deviceId: string; message: string }[] }>('/api/movements', { movements });
+      const { data } = await api.post<{
+        created: number;
+        pending: number;
+        errors: { deviceId: string; message: string }[];
+      }>('/api/movements', { movements, approvalToken });
       queryClient.invalidateQueries({ queryKey: ['movements'] });
       queryClient.invalidateQueries({ queryKey: ['devices'] });
-      toast.success(`${data.created} movimiento(s) registrado(s)`);
+      if (data.created > 0) toast.success(`${data.created} movimiento(s) registrado(s)`);
+      if (data.pending > 0) toast.success(`${data.pending} traslado(s) en espera de autorización`);
       if (data.errors?.length) toast.error(`${data.errors.length} no se pudieron registrar`);
       setCart((prev) => prev.filter((d) => !ids.includes(d.id)));
       setSelectedCartIds(new Set());
@@ -191,7 +211,13 @@ export default function Movements() {
   });
 
   const [approving, setApproving] = useState(false);
-  const [authModal, setAuthModal] = useState<null | { mode: 'one'; id: string } | { mode: 'batch' }>(null);
+  const [authModal, setAuthModal] = useState<
+    | null
+    | { mode: 'one'; id: string }
+    | { mode: 'batch' }
+    | { mode: 'register'; ids: string[] }
+    | { mode: 'import' }
+  >(null);
 
   const invalidateAfterApprove = () => {
     queryClient.invalidateQueries({ queryKey: ['movements-pending'] });
@@ -221,6 +247,17 @@ export default function Movements() {
 
   const handleAuthorized = async (approvalToken: string) => {
     if (!authModal) return;
+    if (authModal.mode === 'register') {
+      const ids = authModal.ids;
+      setAuthModal(null);
+      await registerMovements(ids, approvalToken);
+      return;
+    }
+    if (authModal.mode === 'import') {
+      setAuthModal(null);
+      await runImport(approvalToken);
+      return;
+    }
     setApproving(true);
     try {
       if (authModal.mode === 'one') {
@@ -691,11 +728,23 @@ export default function Movements() {
 
       <AuthorizeModal
         open={!!authModal}
-        title={authModal?.mode === 'batch' ? 'Autorizar todos los pendientes' : 'Autorizar traslado'}
+        title={
+          authModal?.mode === 'batch'
+            ? 'Autorizar todos los pendientes'
+            : authModal?.mode === 'register'
+              ? 'Confirmar traslado'
+              : authModal?.mode === 'import'
+                ? 'Confirmar importación'
+                : 'Autorizar traslado'
+        }
         description={
           authModal?.mode === 'batch'
             ? `Confirma con biometría o PIN para autorizar ${pendingData?.items?.length ?? 0} traslado(s).`
-            : 'Confirma con Face ID / huella o con tu PIN para autorizar este traslado.'
+            : authModal?.mode === 'register'
+              ? `Confirma con Face ID / huella o con tu PIN para registrar ${authModal.ids.length} traslado(s).`
+              : authModal?.mode === 'import'
+                ? 'La importación cambia la ubicación de los equipos del archivo. Confirma con Face ID / huella o con tu PIN.'
+                : 'Confirma con Face ID / huella o con tu PIN para autorizar este traslado.'
         }
         onClose={() => !approving && setAuthModal(null)}
         onAuthorized={handleAuthorized}

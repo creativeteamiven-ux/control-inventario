@@ -22,6 +22,8 @@ router.get('/', requirePermission('loans.view'), async (req, res, next) => {
         device: { select: { id: true, name: true, internalCode: true, brand: true } },
       },
       orderBy: { loanDate: 'desc' },
+      // Tope de seguridad mientras la vista no pagine.
+      take: 1000,
     });
     res.json(items);
   } catch (e) {

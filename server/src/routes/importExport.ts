@@ -7,6 +7,7 @@ import multer from 'multer';
 import * as XLSX from 'xlsx';
 import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
+import { assertApprovalToken } from '../lib/approvalToken.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -587,6 +588,8 @@ router.post('/movements', requirePermission('movements.create'), upload.single('
   try {
     const file = req.file;
     if (!file) throw new AppError(400, 'No se envió archivo Excel');
+    // Cambiar ubicaciones en bloque exige la misma confirmación que autorizar un traslado.
+    assertApprovalToken((req.body as { approvalToken?: string })?.approvalToken, req.user!.userId);
     const wb = XLSX.read(file.buffer, { type: 'buffer' });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1 }) as string[][];

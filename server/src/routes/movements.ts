@@ -5,7 +5,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { writeAudit } from '../lib/audit.js';
 import { assertLocationCode, isTemporaryLocation } from '../lib/locations.js';
-import { assertApprovalToken } from '../lib/approvalToken.js';
+import { assertApprovalToken, readApprovalToken } from '../lib/approvalToken.js';
 import { prisma } from '../lib/prisma.js';
 
 const router = Router();
@@ -51,18 +51,33 @@ async function maybeAdvanceEvent(eventId: string | null | undefined, movementTyp
   }
 }
 
-/** Crear movimientos (quedan aprobados e aplicados de inmediato) */
+/**
+ * Crear movimientos.
+ * Con `approvalToken` (PIN o biometría) se aplican de inmediato; sin él quedan
+ * PENDING para que alguien los autorice, igual que los que llegan de eventos.
+ * Así el cambio de ubicación siempre pasa por una confirmación fuerte.
+ */
 router.post('/', requirePermission('movements.create'), async (req: AuthRequest, res, next) => {
   try {
-    const body = req.body as { movements?: MovementPayload[] } | MovementPayload;
+    const body = req.body as { movements?: MovementPayload[]; approvalToken?: string } | MovementPayload;
     const list: MovementPayload[] = Array.isArray((body as { movements?: MovementPayload[] }).movements)
       ? (body as { movements: MovementPayload[] }).movements
       : body && typeof body === 'object' && 'deviceId' in body
         ? [body as MovementPayload]
         : [];
     if (list.length === 0) throw new AppError(400, 'Debe enviar al menos un movimiento');
+    if (list.length > 500) throw new AppError(400, 'Máximo 500 movimientos por petición');
     const userId = req.user!.userId;
-    const results: { created: number; errors: { deviceId: string; message: string }[] } = { created: 0, errors: [] };
+    const authMethod = readApprovalToken(
+      (body as { approvalToken?: string }).approvalToken,
+      userId
+    );
+    const applyNow = authMethod !== null;
+    const results: {
+      created: number;
+      pending: number;
+      errors: { deviceId: string; message: string }[];
+    } = { created: 0, pending: 0, errors: [] };
 
     for (const item of list) {
       const parsed = createMovementSchema.safeParse(item);
@@ -78,32 +93,48 @@ router.post('/', requirePermission('movements.create'), async (req: AuthRequest,
       try {
         const fromLocation = await resolveLoc(parsed.data.fromLocation, device.location);
         const toLocation = await resolveLoc(parsed.data.toLocation, fromLocation);
-        await prisma.$transaction([
-          prisma.movement.create({
-            data: {
-              deviceId: device.id,
-              type: parsed.data.type as MovementType,
-              status: MovementStatus.APPROVED,
-              fromLocation,
-              toLocation,
-              reason: parsed.data.reason.trim(),
-              userId,
-              approvedBy: userId,
-              approvedAt: new Date(),
-            },
-          }),
-          prisma.device.update({
-            where: { id: device.id },
-            data: { location: toLocation },
-          }),
-        ]);
-        results.created++;
+        const data = {
+          deviceId: device.id,
+          type: parsed.data.type as MovementType,
+          fromLocation,
+          toLocation,
+          reason: parsed.data.reason.trim(),
+          userId,
+        };
+        if (applyNow) {
+          await prisma.$transaction([
+            prisma.movement.create({
+              data: {
+                ...data,
+                status: MovementStatus.APPROVED,
+                approvedBy: userId,
+                approvedAt: new Date(),
+              },
+            }),
+            prisma.device.update({
+              where: { id: device.id },
+              data: { location: toLocation },
+            }),
+          ]);
+          results.created++;
+        } else {
+          await prisma.movement.create({
+            data: { ...data, status: MovementStatus.PENDING },
+          });
+          results.pending++;
+        }
       } catch (err) {
         results.errors.push({ deviceId: device.id, message: (err as Error).message });
       }
     }
 
-    if (results.created > 0) await writeAudit(req, 'Movement', 'batch', 'CREATE', { created: results.created });
+    if (results.created > 0 || results.pending > 0) {
+      await writeAudit(req, 'Movement', 'batch', 'CREATE', {
+        created: results.created,
+        pending: results.pending,
+        authMethod,
+      });
+    }
     res.status(201).json(results);
   } catch (e) {
     next(e);
@@ -140,16 +171,16 @@ router.post('/approve-batch', requirePermission('movements.create'), async (req:
     for (const id of ids) {
       const existing = await prisma.movement.findUnique({ where: { id } });
       if (!existing || existing.status !== 'PENDING' || !existing.toLocation) continue;
-      await prisma.$transaction([
-        prisma.movement.update({
-          where: { id },
-          data: { status: 'APPROVED', approvedBy: userId, approvedAt: new Date() },
-        }),
-        prisma.device.update({
-          where: { id: existing.deviceId },
-          data: { location: existing.toLocation },
-        }),
-      ]);
+      // El filtro por status hace que gane solo la primera petición concurrente.
+      const claimed = await prisma.movement.updateMany({
+        where: { id, status: 'PENDING' },
+        data: { status: 'APPROVED', approvedBy: userId, approvedAt: new Date() },
+      });
+      if (claimed.count === 0) continue;
+      await prisma.device.update({
+        where: { id: existing.deviceId },
+        data: { location: existing.toLocation },
+      });
       if (existing.eventId) eventIds.add(existing.eventId);
       approved++;
       await maybeAdvanceEvent(existing.eventId, existing.type);
@@ -171,16 +202,16 @@ router.post('/:id/approve', requirePermission('movements.create'), async (req: A
 
     const userId = req.user!.userId;
     const method = assertApprovalToken((req.body as { approvalToken?: string })?.approvalToken, userId);
-    await prisma.$transaction([
-      prisma.movement.update({
-        where: { id: existing.id },
-        data: { status: 'APPROVED', approvedBy: userId, approvedAt: new Date() },
-      }),
-      prisma.device.update({
-        where: { id: existing.deviceId },
-        data: { location: existing.toLocation },
-      }),
-    ]);
+    // El filtro por status evita que dos autorizaciones simultáneas se apliquen dos veces.
+    const claimed = await prisma.movement.updateMany({
+      where: { id: existing.id, status: 'PENDING' },
+      data: { status: 'APPROVED', approvedBy: userId, approvedAt: new Date() },
+    });
+    if (claimed.count === 0) throw new AppError(409, 'Este movimiento ya fue resuelto por otra persona');
+    await prisma.device.update({
+      where: { id: existing.deviceId },
+      data: { location: existing.toLocation },
+    });
     await maybeAdvanceEvent(existing.eventId, existing.type);
     await writeAudit(req, 'Movement', existing.id, 'UPDATE', { approved: true, authMethod: method });
     res.json({ ok: true });
@@ -196,10 +227,11 @@ router.post('/:id/reject', requirePermission('movements.create'), async (req: Au
     if (!existing) throw new AppError(404, 'Movimiento no encontrado');
     if (existing.status !== 'PENDING') throw new AppError(400, 'Este movimiento ya fue resuelto');
 
-    await prisma.movement.update({
-      where: { id: existing.id },
+    const claimed = await prisma.movement.updateMany({
+      where: { id: existing.id, status: 'PENDING' },
       data: { status: 'REJECTED', rejectedAt: new Date() },
     });
+    if (claimed.count === 0) throw new AppError(409, 'Este movimiento ya fue resuelto por otra persona');
 
     if (existing.eventId) {
       if (existing.type === 'CHECK_OUT') {

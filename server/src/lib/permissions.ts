@@ -80,6 +80,18 @@ export function getDefaultPermissionsForRole(role: string): string[] {
   return ROLE_DEFAULTS[role] ?? ROLE_DEFAULTS.VIEWER;
 }
 
+/**
+ * Filtra una lista de permisos recibida del cliente:
+ * - descarta claves que no existen en PERMISSIONS
+ * - un actor que no es ADMIN no puede otorgar permisos que su propio rol no tiene
+ */
+export function sanitizePermissions(permissions: string[], actorRole: string): string[] {
+  const valid = permissions.filter((p) => ALL_PERMISSION_KEYS.includes(p));
+  if (actorRole === 'ADMIN') return [...new Set(valid)];
+  const actorAllowed = new Set(getDefaultPermissionsForRole(actorRole));
+  return [...new Set(valid.filter((p) => actorAllowed.has(p)))];
+}
+
 export function canViewCost(permissions: string[]): boolean {
   return permissions.includes('sensitive.view_cost');
 }

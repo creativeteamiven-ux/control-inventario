@@ -174,6 +174,13 @@ model Device {
   expenses       Expense[]
   tags           Tag[]
   eventItems     EventItem[]
+
+  // Campos combinados en casi todos los listados y filtros del inventario.
+  @@index([deletedAt])
+  @@index([status])
+  @@index([location])
+  @@index([categoryId])
+  @@index([deletedAt, status])
 }
 
 model DeviceImage {
@@ -183,6 +190,8 @@ model DeviceImage {
   url       String   @db.VarChar(1000)
   order     Int      @default(0)
   createdAt DateTime @default(now())
+
+  @@index([deviceId])
 }
 
 model Document {
@@ -193,6 +202,8 @@ model Document {
   type      String   // factura, manual, garantia
   url       String   @db.VarChar(1000)
   createdAt DateTime @default(now())
+
+  @@index([deviceId])
 }
 
 model Movement {
@@ -215,6 +226,9 @@ model Movement {
 
   @@index([status])
   @@index([eventId])
+  @@index([deviceId])
+  @@index([createdAt])
+  @@index([status, createdAt])
 }
 
 model Maintenance {
@@ -232,6 +246,10 @@ model Maintenance {
   userId      String
   user        User      @relation(fields: [userId], references: [id])
   createdAt   DateTime  @default(now())
+
+  @@index([deviceId])
+  @@index([status])
+  @@index([startDate])
 }
 
 model LoanRecord {
@@ -250,6 +268,10 @@ model LoanRecord {
   approvedByUser  User      @relation("ApprovedBy", fields: [approvedBy], references: [id])
   notes           String?   @db.Text
   createdAt       DateTime  @default(now())
+
+  @@index([deviceId])
+  @@index([status])
+  @@index([expectedReturn])
 }
 
 // Gastos: contabilidad de inventario (compras, reparaciones, servicios, etc.)
@@ -302,6 +324,10 @@ model AuditLog {
   ipAddress  String?
   userAgent  String?
   createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entity, createdAt])
+  @@index([userId])
 }
 
 // Destinatarios de alertas por correo (gestionados desde Configuración)

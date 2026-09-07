@@ -37,6 +37,33 @@ export function isCloudStorage(): boolean {
 
 const uploadsDir = path.join(process.cwd(), 'uploads');
 
+const isProduction =
+  process.env.NODE_ENV === 'production' || !!process.env.RENDER || !!process.env.VERCEL;
+
+/**
+ * En producción el disco del contenedor es efímero: sin Cloudinary los archivos
+ * desaparecen en cada despliegue, así que se rechaza la subida en lugar de
+ * aceptarla y perderla después.
+ */
+export function assertStorageConfigured(): void {
+  if (isProduction && !isCloudStorage()) {
+    throw new Error(
+      'Almacenamiento no configurado: define CLOUDINARY_URL (o CLOUDINARY_CLOUD_NAME, ' +
+        'CLOUDINARY_API_KEY y CLOUDINARY_API_SECRET) para poder guardar archivos en producción.'
+    );
+  }
+}
+
+/**
+ * URL pública absoluta del backend, necesaria porque el frontend vive en otro
+ * dominio y una ruta relativa como /uploads/... apuntaría al del frontend.
+ */
+function publicBaseUrl(): string {
+  const explicit = process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL;
+  if (explicit) return explicit.replace(/\/$/, '');
+  return '';
+}
+
 /**
  * Sube un buffer y devuelve la URL pública.
  * @param folder subcarpeta lógica (images, receipts, documents)
@@ -47,6 +74,7 @@ export async function uploadBuffer(
   folder: string,
   originalName: string
 ): Promise<string> {
+  assertStorageConfigured();
   if (isCloudStorage()) {
     const isImage = /\.(jpe?g|png|webp|gif)$/i.test(originalName);
     const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
@@ -68,7 +96,7 @@ export async function uploadBuffer(
   const ext = path.extname(originalName) || '';
   const filename = `${uuidv4()}${ext}`;
   fs.writeFileSync(path.join(dir, filename), buffer);
-  return `/uploads/${folder}/${filename}`;
+  return `${publicBaseUrl()}/uploads/${folder}/${filename}`;
 }
 
 /**
@@ -89,8 +117,13 @@ export async function deleteByUrl(url: string): Promise<void> {
       }
       return;
     }
-    if (url.startsWith('/uploads/')) {
-      const filePath = path.join(process.cwd(), url.replace(/^\//, ''));
+    const localPath = url.startsWith('/uploads/')
+      ? url
+      : url.includes('/uploads/')
+        ? url.slice(url.indexOf('/uploads/'))
+        : null;
+    if (localPath) {
+      const filePath = path.join(process.cwd(), localPath.replace(/^\//, ''));
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
   } catch {

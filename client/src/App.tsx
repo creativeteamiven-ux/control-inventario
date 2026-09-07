@@ -2,9 +2,10 @@ import { Suspense } from 'react';
 import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { lazyWithRetry } from '@/lib/lazyWithRetry';
-import Login from '@/pages/Login';
-import Layout from '@/components/Layout';
 
+// Login también diferido: quien ya tiene sesión no descarga la pantalla de acceso.
+const Login = lazyWithRetry(() => import('@/pages/Login'));
+const Layout = lazyWithRetry(() => import('@/components/Layout'));
 const Dashboard = lazyWithRetry(() => import('@/pages/Dashboard'));
 const Inventory = lazyWithRetry(() => import('@/pages/Inventory'));
 const DeviceDetail = lazyWithRetry(() => import('@/pages/DeviceDetail'));

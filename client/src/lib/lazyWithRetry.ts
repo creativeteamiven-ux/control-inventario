@@ -16,7 +16,9 @@ export function isChunkLoadError(error: unknown): boolean {
  * React.lazy con reintento: si el chunk no existe (despliegue nuevo + caché vieja),
  * recarga la página una vez para obtener el index.html actualizado.
  */
-export function lazyWithRetry<T extends ComponentType<unknown>>(
+// `any` en el constraint para admitir también componentes con props (no solo páginas sin props).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function lazyWithRetry<T extends ComponentType<any>>(
   factory: () => Promise<{ default: T }>
 ) {
   return lazy(async () => {

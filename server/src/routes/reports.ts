@@ -12,6 +12,12 @@ const router = Router();
 
 router.use(authenticate);
 
+/**
+ * Tope de filas por reporte. Sin él, un histórico de varios años genera
+ * respuestas de decenas de MB y puede agotar la memoria del proceso.
+ */
+const MAX_REPORT_ROWS = 20000;
+
 const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   CHECK_IN: 'Entrada',
   CHECK_OUT: 'Salida',
@@ -80,6 +86,7 @@ router.get('/movements/export', requirePermission('reports.export'), async (req,
         user: { select: { name: true, email: true } },
       },
       orderBy: { createdAt: 'desc' },
+      take: MAX_REPORT_ROWS,
     });
 
     const rows = movements.map((m) => ({
@@ -122,6 +129,7 @@ router.get('/movements/pdf', requirePermission('reports.export'), async (req, re
         user: { select: { name: true } },
       },
       orderBy: { createdAt: 'desc' },
+      take: MAX_REPORT_ROWS,
     });
 
     const doc = new PDFDocument({ size: 'A4', margin: 40, layout: 'landscape' });
@@ -235,6 +243,7 @@ router.get('/inventory', requirePermission('reports.view'), async (req, res, nex
       where,
       include: { category: true, images: { take: 1, orderBy: { order: 'asc' } } },
       orderBy: [{ category: { name: 'asc' } }, { internalCode: 'asc' }],
+      take: MAX_REPORT_ROWS,
     });
     const perms = (req as AuthRequest).user?.permissions ?? [];
     res.json(stripCostFromResponse(devices, perms));
@@ -252,6 +261,7 @@ router.get('/inventory/pdf', requirePermission('reports.export'), async (req, re
       where,
       include: { category: true },
       orderBy: [{ category: { name: 'asc' } }, { internalCode: 'asc' }],
+      take: MAX_REPORT_ROWS,
     });
 
     let categoryName: string | undefined;
@@ -352,6 +362,7 @@ router.get('/inventory/export', requirePermission('reports.export'), async (req:
       where,
       include: { category: { select: { name: true } } },
       orderBy: [{ category: { name: 'asc' } }, { internalCode: 'asc' }],
+      take: MAX_REPORT_ROWS,
     });
     const names = await locationNameMap(prisma);
     const perms = req.user?.permissions ?? [];
@@ -405,6 +416,7 @@ router.get('/maintenance/export', requirePermission('reports.export'), async (re
         user: { select: { name: true } },
       },
       orderBy: { startDate: 'desc' },
+      take: MAX_REPORT_ROWS,
     });
     const perms = req.user?.permissions ?? [];
     const showCost = perms.includes('sensitive.view_cost');
@@ -447,6 +459,7 @@ router.get('/loans/export', requirePermission('reports.export'), async (req, res
       where,
       include: { device: { select: { internalCode: true, name: true } } },
       orderBy: { loanDate: 'desc' },
+      take: MAX_REPORT_ROWS,
     });
     const rows = items.map((l) => ({
       Código: l.device?.internalCode ?? '',

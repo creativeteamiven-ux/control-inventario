@@ -11,6 +11,17 @@ node_modules/
 .env.local
 .env.*.local
 *.env
+*.bak
+.env.bak
+
+# Archivos subidos por usuarios (van a Cloudinary en producción)
+server/uploads/
+uploads/
+
+# Base de datos local
+*.db
+*.sqlite
+server/prisma/dev.db
 
 # Build / salida
 dist/

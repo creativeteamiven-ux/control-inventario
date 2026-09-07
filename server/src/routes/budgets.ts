@@ -31,23 +31,38 @@ router.get('/', async (req, res, next) => {
       orderBy: [{ year: 'desc' }, { month: 'asc' }],
     });
 
-    const result = await Promise.all(
-      budgets.map(async (b) => {
-        const range = periodRange(b.year, b.month);
-        const expenseWhere: Record<string, unknown> = { date: range, currency: b.currency };
-        if (b.category) expenseWhere.category = b.category;
-        const agg = await prisma.expense.aggregate({ where: expenseWhere, _sum: { amount: true } });
-        const spent = Number(agg._sum.amount || 0);
-        const amount = Number(b.amount);
-        return {
-          ...b,
-          amount,
-          spent,
-          remaining: Math.round((amount - spent) * 100) / 100,
-          percentUsed: amount > 0 ? Math.round((spent / amount) * 100) : 0,
-        };
-      })
-    );
+    // Un solo recorrido de gastos para todos los presupuestos, en lugar de un
+    // aggregate por presupuesto (que crecía con cada año y categoría).
+    const years = [...new Set(budgets.map((b) => b.year))];
+    const expenses = years.length
+      ? await prisma.expense.findMany({
+          where: {
+            date: {
+              gte: new Date(Math.min(...years), 0, 1, 0, 0, 0, 0),
+              lte: new Date(Math.max(...years), 11, 31, 23, 59, 59, 999),
+            },
+          },
+          select: { date: true, amount: true, currency: true, category: true },
+        })
+      : [];
+
+    const result = budgets.map((b) => {
+      const range = periodRange(b.year, b.month);
+      const spent = expenses.reduce((sum, e) => {
+        if (e.currency !== b.currency) return sum;
+        if (b.category && e.category !== b.category) return sum;
+        if (e.date < range.gte || e.date > range.lte) return sum;
+        return sum + Number(e.amount);
+      }, 0);
+      const amount = Number(b.amount);
+      return {
+        ...b,
+        amount,
+        spent,
+        remaining: Math.round((amount - spent) * 100) / 100,
+        percentUsed: amount > 0 ? Math.round((spent / amount) * 100) : 0,
+      };
+    });
     res.json(result);
   } catch (e) {
     next(e);

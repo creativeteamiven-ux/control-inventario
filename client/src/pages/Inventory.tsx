@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -6,6 +6,8 @@ import { Package, Grid3X3, List, Plus, Search, Download, Upload, Truck, FolderTr
 import { addToStoredCart, addManyToStoredCart, getStoredCart } from '@/lib/transferCart';
 import { getBuildEventId, setBuildEventId } from '@/lib/eventBuild';
 import { api } from '@/lib/api';
+import { fileUrl } from '@/lib/fileUrl';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import AddDeviceModal from '@/components/AddDeviceModal';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
@@ -47,6 +49,7 @@ export default function Inventory() {
     toast.success('Agregado al traslado. Ve a Movimientos para descargar la plantilla.');
   };
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [page, setPage] = useState(1);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
@@ -154,24 +157,29 @@ export default function Inventory() {
       ? selectedListId
       : eventLists[0]?.id || '';
 
-  function flattenCategories(
-    cats: { id: string; name: string; _count?: { devices: number }; children?: unknown[] }[],
-    prefix = ''
-  ): { id: string; name: string; count: number }[] {
-    const out: { id: string; name: string; count: number }[] = [];
-    for (const c of cats) {
-      const count = c._count?.devices ?? 0;
-      const label = prefix ? `${prefix} › ${c.name}` : c.name;
-      out.push({ id: c.id, name: label, count });
-      const children = c.children as { id: string; name: string; _count?: { devices: number }; children?: unknown[] }[] | undefined;
-      if (children?.length) {
-        out.push(...flattenCategories(children, prefix ? `${prefix} › ${c.name}` : c.name));
+  const categoriesFlat = useMemo(() => {
+    function flatten(
+      cats: { id: string; name: string; _count?: { devices: number }; children?: unknown[] }[],
+      prefix = ''
+    ): { id: string; name: string; count: number }[] {
+      const out: { id: string; name: string; count: number }[] = [];
+      for (const c of cats) {
+        const count = c._count?.devices ?? 0;
+        const label = prefix ? `${prefix} › ${c.name}` : c.name;
+        out.push({ id: c.id, name: label, count });
+        const children = c.children as { id: string; name: string; _count?: { devices: number }; children?: unknown[] }[] | undefined;
+        if (children?.length) {
+          out.push(...flatten(children, prefix ? `${prefix} › ${c.name}` : c.name));
+        }
       }
+      return out;
     }
-    return out;
-  }
-  const categoriesFlat = Array.isArray(categoriesData) ? flattenCategories(categoriesData) : [];
-  const totalDevicesInCategories = categoriesFlat.reduce((s, c) => s + c.count, 0);
+    return Array.isArray(categoriesData) ? flatten(categoriesData) : [];
+  }, [categoriesData]);
+  const totalDevicesInCategories = useMemo(
+    () => categoriesFlat.reduce((s, c) => s + c.count, 0),
+    [categoriesFlat]
+  );
 
   const downloadLabels = async (useSelection: boolean) => {
     try {
@@ -332,11 +340,11 @@ export default function Inventory() {
   };
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['devices', search, page, limit, categoryId, statusFilter, locationFilter, needsReview],
+    queryKey: ['devices', debouncedSearch, page, limit, categoryId, statusFilter, locationFilter, needsReview],
     queryFn: async () => {
       const { data } = await api.get('/api/devices', {
         params: {
-          search: search || undefined,
+          search: debouncedSearch || undefined,
           page,
           limit,
           categoryId: categoryId || undefined,
@@ -1257,7 +1265,7 @@ export default function Inventory() {
                   <div className="flex gap-3 w-full">
                     <div className="h-16 w-16 shrink-0 rounded-lg bg-card-hover flex items-center justify-center overflow-hidden">
                       {d.images?.[0]?.url ? (
-                        <img src={d.images[0].url} alt={d.name} className="h-full w-full object-cover" />
+                        <img src={fileUrl(d.images[0].url)} alt={d.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                       ) : (
                         <Package className="h-8 w-8 text-muted" />
                       )}
@@ -1445,7 +1453,7 @@ export default function Inventory() {
                 >
                   <div className="h-32 bg-card-hover flex items-center justify-center">
                     {d.images?.[0]?.url ? (
-                      <img src={d.images[0].url} alt={d.name} className="h-full w-full object-cover" />
+                      <img src={fileUrl(d.images[0].url)} alt={d.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                     ) : (
                       <Package className="h-12 w-12 text-muted" />
                     )}

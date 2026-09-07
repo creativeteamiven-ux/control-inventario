@@ -22,6 +22,7 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
+import { fileUrl } from '@/lib/fileUrl';
 import { Button } from '@/components/ui/button';
 import BarcodeScanner from '@/components/BarcodeScanner';
 import DevicePickerModal from '@/components/DevicePickerModal';
@@ -1089,7 +1090,7 @@ export default function EventDetailPage() {
                 </div>
                 <div className="h-10 w-10 rounded-lg bg-card-hover overflow-hidden shrink-0 flex items-center justify-center">
                   {item.device.images?.[0]?.url ? (
-                    <img src={item.device.images[0].url} alt="" className="h-full w-full object-cover" />
+                    <img src={fileUrl(item.device.images[0].url)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                   ) : (
                     <Package className="h-5 w-5 text-muted" />
                   )}

@@ -724,16 +724,28 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
           item,
         });
       }
-      const updated = await prisma.$transaction([
-        prisma.eventItem.update({
-          where: { id: item.id },
-          data: {
-            outboundScannedAt: new Date(),
-            outboundUserId: userId,
-            outboundUserName: userName,
-            originLocation: device.location,
-          },
-        }),
+      // Condicionar por outboundScannedAt: null hace que dos escaneos
+      // simultáneos del mismo equipo no dupliquen el registro.
+      const claimed = await prisma.eventItem.updateMany({
+        where: { id: item.id, outboundScannedAt: null },
+        data: {
+          outboundScannedAt: new Date(),
+          outboundUserId: userId,
+          outboundUserName: userName,
+          originLocation: device.location,
+        },
+      });
+      if (claimed.count === 0) {
+        return res.json({
+          success: true,
+          code: 'ALREADY_SCANNED',
+          message: 'Este equipo ya fue verificado',
+          device: deviceScanPayload(device),
+          item,
+        });
+      }
+      const [updatedItem] = await prisma.$transaction([
+        prisma.eventItem.findUnique({ where: { id: item.id } }),
         prisma.device.update({ where: { id: device.id }, data: { lastCheckedAt: new Date() } }),
         prisma.eventScan.create({
           data: {
@@ -754,7 +766,7 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
         code: 'OK',
         message: 'Equipo verificado',
         device: deviceScanPayload(device),
-        item: updated[0],
+        item: updatedItem,
         stats: fresh ? eventStats(fresh.items) : undefined,
       });
     }
@@ -798,11 +810,21 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
         item,
       });
     }
-    const updated = await prisma.$transaction([
-      prisma.eventItem.update({
-        where: { id: item.id },
-        data: { inboundScannedAt: new Date(), inboundUserId: userId, inboundUserName: userName },
-      }),
+    const claimedInbound = await prisma.eventItem.updateMany({
+      where: { id: item.id, inboundScannedAt: null },
+      data: { inboundScannedAt: new Date(), inboundUserId: userId, inboundUserName: userName },
+    });
+    if (claimedInbound.count === 0) {
+      return res.json({
+        success: true,
+        code: 'ALREADY_SCANNED',
+        message: 'Este equipo ya fue verificado',
+        device: deviceScanPayload(device),
+        item,
+      });
+    }
+    const [updatedItem] = await prisma.$transaction([
+      prisma.eventItem.findUnique({ where: { id: item.id } }),
       prisma.device.update({ where: { id: device.id }, data: { lastCheckedAt: new Date() } }),
       prisma.eventScan.create({
         data: {
@@ -823,7 +845,7 @@ router.post('/:id/scan', requirePermission('events.scan'), async (req: AuthReque
       code: 'OK',
       message: 'Equipo verificado',
       device: deviceScanPayload(device),
-      item: updated[0],
+      item: updatedItem,
       stats: fresh ? eventStats(fresh.items) : undefined,
     });
   } catch (e) {
@@ -903,10 +925,20 @@ router.post('/:id/send-to-movements', requirePermission('events.manage'), async 
         },
       });
 
-      await prisma.eventItem.update({
-        where: { id: item.id },
+      // Reclamar el item solo si sigue libre: si otra petición se adelantó,
+      // se descarta el movimiento recién creado en lugar de duplicarlo.
+      const claimed = await prisma.eventItem.updateMany({
+        where:
+          phase === 'OUTBOUND'
+            ? { id: item.id, outboundMovementId: null }
+            : { id: item.id, inboundMovementId: null },
         data: phase === 'OUTBOUND' ? { outboundMovementId: movement.id } : { inboundMovementId: movement.id },
       });
+      if (claimed.count === 0) {
+        await prisma.movement.delete({ where: { id: movement.id } });
+        skipped++;
+        continue;
+      }
       created++;
     }
 

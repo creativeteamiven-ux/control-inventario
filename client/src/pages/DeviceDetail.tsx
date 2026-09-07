@@ -5,6 +5,7 @@ import { ArrowLeft, Package, Pencil, Barcode, TrendingDown, Trash2, ImagePlus, X
 import toast from 'react-hot-toast';
 import EditDeviceModal from '@/components/EditDeviceModal';
 import { api } from '@/lib/api';
+import { fileUrl } from '@/lib/fileUrl';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { deviceStatusLabel } from '@/lib/statusLabels';
@@ -253,7 +254,7 @@ export default function DeviceDetail() {
             <X className="h-6 w-6" />
           </button>
           <img
-            src={images[mainIndex]?.url}
+            src={fileUrl(images[mainIndex]?.url)}
             alt={d.name}
             className="max-h-[90vh] max-w-[92vw] object-contain rounded-lg"
             onClick={(e) => e.stopPropagation()}
@@ -288,7 +289,7 @@ export default function DeviceDetail() {
               {images.length > 0 ? (
                 <>
                   <img
-                    src={images[mainIndex]?.url}
+                    src={fileUrl(images[mainIndex]?.url)}
                     alt={d.name}
                     className="h-full w-full object-contain cursor-zoom-in"
                     onClick={() => setViewerOpen(true)}
@@ -333,7 +334,7 @@ export default function DeviceDetail() {
                     )}
                     onClick={() => setActiveImage(i)}
                   >
-                    <img src={img.url} alt={`${d.name} ${i + 1}`} className="h-full w-full object-cover" />
+                    <img src={fileUrl(img.url)} alt={`${d.name} ${i + 1}`} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                     {i === 0 && (
                       <span className="absolute bottom-0 inset-x-0 bg-primary/80 text-[9px] text-white text-center leading-tight py-0.5">Principal</span>
                     )}

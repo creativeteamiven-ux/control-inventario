@@ -1,13 +1,19 @@
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { Package, Wrench, HandCoins, DollarSign, AlertTriangle, Eye, EyeOff } from 'lucide-react';
-import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from 'recharts';
+import { lazyWithRetry } from '@/lib/lazyWithRetry';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { deviceStatusLabel } from '@/lib/statusLabels';
 import { usePermissions } from '@/hooks/usePermissions';
 import { Button } from '@/components/ui/button';
+
+const DashboardChart = lazyWithRetry(() => import('@/components/DashboardChart'));
+
+function ChartFallback() {
+  return <div className="h-full w-full animate-pulse rounded-lg bg-card-hover" />;
+}
 
 const DASHBOARD_VISIBILITY_KEY = 'dashboard-visibility';
 
@@ -207,15 +213,9 @@ export default function Dashboard() {
           </div>
           {visible.category && (
             <div className="h-56 sm:h-64 overflow-x-auto">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={2} dataKey="value">
-                    {pieData.map((entry: { color: string }, i: number) => (
-                      <Cell key={i} fill={entry.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
+              <Suspense fallback={<ChartFallback />}>
+                <DashboardChart kind="category" data={pieData} />
+              </Suspense>
             </div>
           )}
         </div>
@@ -234,13 +234,9 @@ export default function Dashboard() {
           </div>
           {visible.status && (
             <div className="h-56 sm:h-64 overflow-x-auto">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData} layout="vertical" margin={{ left: 60 }}>
-                  <XAxis type="number" stroke="#64748B" tick={{ fontSize: 12 }} />
-                  <YAxis type="category" dataKey="name" stroke="#64748B" width={60} tick={{ fontSize: 12 }} />
-                  <Bar dataKey="count" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <Suspense fallback={<ChartFallback />}>
+                <DashboardChart kind="status" data={barData} />
+              </Suspense>
             </div>
           )}
         </div>
@@ -259,13 +255,9 @@ export default function Dashboard() {
           </div>
           {visible.location !== false && (
             <div className="h-56 sm:h-64 overflow-x-auto">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={locationData} layout="vertical" margin={{ left: 80 }}>
-                  <XAxis type="number" stroke="#64748B" tick={{ fontSize: 12 }} />
-                  <YAxis type="category" dataKey="name" stroke="#64748B" width={80} tick={{ fontSize: 11 }} />
-                  <Bar dataKey="count" radius={[0, 4, 4, 0]} fill="#F59E0B" />
-                </BarChart>
-              </ResponsiveContainer>
+              <Suspense fallback={<ChartFallback />}>
+                <DashboardChart kind="location" data={locationData} />
+              </Suspense>
             </div>
           )}
         </div>

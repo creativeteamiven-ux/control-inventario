@@ -20,8 +20,11 @@ router.post('/cron/digest', async (req, res, next) => {
   try {
     const secret = process.env.ALERT_CRON_SECRET;
     if (!secret) throw new AppError(404, 'Cron no habilitado (falta ALERT_CRON_SECRET).');
-    const provided = req.header('x-cron-secret') || (req.query.secret as string) || '';
-    if (provided !== secret) throw new AppError(401, 'Token de cron inválido.');
+    // Solo por cabecera: en query string el secreto queda en logs de proxy y en el Referer.
+    const provided = req.header('x-cron-secret') || '';
+    if (provided.length !== secret.length || provided !== secret) {
+      throw new AppError(401, 'Token de cron inválido.');
+    }
     const onlyIfAny = process.env.ALERT_DIGEST_ALWAYS !== 'true';
     const result = await sendAlertDigest(prisma, { onlyIfAny });
     res.json({ ok: result.sent, ...result });

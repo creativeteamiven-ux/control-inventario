@@ -7,6 +7,7 @@ import sharp from 'sharp';
 import { AppError } from '../middleware/errorHandler.js';
 import { authenticate, AuthRequest, requirePermission } from '../middleware/auth.js';
 import { uploadBuffer, deleteByUrl } from '../lib/storage.js';
+import { assertFileContent } from '../lib/fileSignature.js';
 
 import { prisma } from '../lib/prisma.js';
 
@@ -71,6 +72,7 @@ router.post('/images', requirePermission('inventory.edit'), uploadImages.array('
     const order = parseInt(req.body.order as string) || 0;
     const results: { url: string; id: string }[] = [];
     for (let i = 0; i < files.length; i++) {
+      assertFileContent(files[i].buffer, 'image', files[i].originalname);
       const buf = await sharp(files[i].buffer)
         .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality: 85 })
@@ -128,6 +130,7 @@ router.post('/documents', requirePermission('inventory.edit'), uploadDocs.single
     const type = (req.body.type as string) || 'manual';
     const name = req.body.name || file?.originalname || 'Documento';
     if (!file || !deviceId) throw new AppError(400, 'Falta archivo o deviceId');
+    assertFileContent(file.buffer, 'document', file.originalname);
     const url = await uploadBuffer(file.buffer, 'documents', file.originalname);
     const doc = await prisma.document.create({
       data: { deviceId, name, type, url },
@@ -143,6 +146,7 @@ router.post('/receipt', requirePermission('finance.manage'), uploadReceipts.sing
   try {
     const file = req.file;
     if (!file) throw new AppError(400, 'No se envió ningún comprobante');
+    assertFileContent(file.buffer, 'receipt', file.originalname);
     const url = await uploadBuffer(file.buffer, 'receipts', file.originalname);
     res.status(201).json({ url, name: file.originalname });
   } catch (e) {
