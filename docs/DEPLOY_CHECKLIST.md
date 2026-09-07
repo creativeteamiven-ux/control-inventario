@@ -63,6 +63,11 @@ local y commit de la carpeta generada en `server/prisma/migrations/`.
   `prisma db push`: parchearía el esquema en cada arranque y anularía el
   historial de migraciones.
 - **Root Directory:** vacío. El build necesita ver `packages/shared`.
+- **El build descarga `xlsx` del CDN de SheetJS**, no del registro de npm: la
+  última versión publicada allí (0.18.5) arrastra dos CVE sin parchear y el
+  proyecto dejó de publicar en npm. En `package.json` la dependencia apunta a
+  `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`. Si algún día el build
+  falla al instalar dependencias, comprueba que ese CDN esté accesible.
 - **Environment variables** del Web Service (Settings → Environment):
 
   | Variable | Obligatoria | Valor |

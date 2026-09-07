@@ -13,7 +13,7 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
-    "db:migrate:baseline": "prisma migrate resolve --applied 0_init",
+    "db:migrate:baseline": "prisma migrate resolve --applied 20260831_events",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "db:source:generate": "prisma generate --schema=prisma/source.prisma",
@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
-    "@simplewebauthn/server": "^11.0.0",
+    "@simplewebauthn/server": "^14.0.1",
     "@soundvault/shared": "file:../packages/shared",
     "bcryptjs": "^2.4.3",
     "bwip-js": "^4.11.4",
@@ -40,12 +40,12 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
     "node-cron": "^4.6.0",
-    "nodemailer": "^6.9.14",
+    "nodemailer": "^10.0.1",
     "pdfkit": "^0.17.2",
     "prisma": "^5.22.0",
-    "sharp": "^0.33.5",
-    "uuid": "^10.0.0",
-    "xlsx": "^0.18.5"
+    "sharp": "^0.35.4",
+    "uuid": "^14.0.2",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -58,7 +58,6 @@
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^6.4.16",
     "@types/pdfkit": "^0.17.5",
-    "@types/uuid": "^10.0.0",
     "@vercel/functions": "^3.4.3",
     "tsx": "^4.19.2",
     "typescript": "^5.3.3",
@@ -66,5 +65,8 @@
   },
   "engines": {
     "node": ">=20 <21"
+  },
+  "overrides": {
+    "qs": "^6.16.0"
   }
 }

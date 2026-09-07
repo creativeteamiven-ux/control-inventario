@@ -9,11 +9,11 @@
  *  - Común:  MAIL_FROM (remitente; por defecto el usuario), ALERT_RECIPIENTS (lista separada por comas)
  */
 import nodemailer from 'nodemailer';
-import type { Transporter } from 'nodemailer';
+import type { Transporter, TransportOptions } from 'nodemailer';
 
 interface MailerConfig {
   from: string;
-  options: nodemailer.TransportOptions;
+  options: TransportOptions;
 }
 
 function getConfig(): MailerConfig | null {
@@ -31,7 +31,7 @@ function getConfig(): MailerConfig | null {
         connectionTimeout: 10_000,
         greetingTimeout: 10_000,
         socketTimeout: 15_000,
-      } as nodemailer.TransportOptions,
+      } as TransportOptions,
     };
   }
   const host = process.env.SMTP_HOST;
@@ -45,7 +45,7 @@ function getConfig(): MailerConfig | null {
         port: Number(process.env.SMTP_PORT) || 587,
         secure: process.env.SMTP_SECURE === 'true',
         auth: user && pass ? { user, pass } : undefined,
-      } as nodemailer.TransportOptions,
+      } as TransportOptions,
     };
   }
   return null;

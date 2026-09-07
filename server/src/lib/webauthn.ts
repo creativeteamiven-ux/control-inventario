@@ -1,4 +1,4 @@
-import type { AuthenticatorTransportFuture } from '@simplewebauthn/types';
+import type { AuthenticatorTransport } from '@simplewebauthn/server';
 
 /** Challenges WebAuthn en memoria (TTL corto; suficiente en una instancia Render). */
 type ChallengeEntry = { challenge: string; userId: string; expiresAt: number };
@@ -42,11 +42,11 @@ export function getWebAuthnConfig() {
   return { rpID, rpName, origin };
 }
 
-export function parseTransports(raw: string | null | undefined): AuthenticatorTransportFuture[] | undefined {
+export function parseTransports(raw: string | null | undefined): AuthenticatorTransport[] | undefined {
   if (!raw) return undefined;
   try {
     const parsed = JSON.parse(raw) as string[];
-    return parsed as AuthenticatorTransportFuture[];
+    return parsed as AuthenticatorTransport[];
   } catch {
     return undefined;
   }
