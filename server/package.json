@@ -16,6 +16,7 @@
     "db:migrate:baseline": "prisma migrate resolve --applied 20260831_events",
     "db:seed": "tsx prisma/seed.ts",
     "db:backup": "tsx scripts/backup-db.ts",
+    "manual:pdf": "tsx scripts/build-manual-pdf.ts",
     "db:clean": "tsx scripts/clean-db-keep-users.ts",
     "db:studio": "prisma studio",
     "db:source:generate": "prisma generate --schema=prisma/source.prisma",
