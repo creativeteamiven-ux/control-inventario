@@ -2,12 +2,14 @@
 
 Sistema full-stack para gestionar el inventario de equipos. Desplegable en subdominio (ej: inventario.tudominio.com).
 
+> **Manual de uso:** [docs/MANUAL_DE_USO.md](docs/MANUAL_DE_USO.md) — cómo usar la aplicación, módulo por módulo. Escrito para los usuarios finales.
+>
 > **Especificación completa del proyecto:** [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md) — stack, diseño, módulos, BD y features. Úsala como referencia (ej: `@docs/PROJECT_SPEC.md`) en el asistente.
 
 ## Stack
 
 - **Frontend**: React 18, Vite, TypeScript, TailwindCSS, TanStack Query, Recharts
-- **Backend**: Node.js, Express, TypeScript, Prisma, PostgreSQL
+- **Backend**: Node.js, Express, TypeScript, Prisma, MySQL (TiDB Cloud en producción)
 - **Auth**: JWT con refresh token
 
 ## Desarrollo local
