@@ -1239,7 +1239,7 @@ export default function Inventory() {
             <span className="text-sm font-medium text-foreground">Seleccionar todo (página)</span>
           </label>
         </div>
-        {devices.map((d: { id: string; internalCode: string; name: string; brand: string; model: string; category: { name: string }; status: string; location?: string; condition?: number; observation?: string | null; images: { url: string }[] }) => {
+        {devices.map((d: { id: string; internalCode: string; serialNumber?: string | null; name: string; brand: string; model: string; category: { name: string }; status: string; location?: string; condition?: number; observation?: string | null; images: { url: string }[] }) => {
           const hasObservation = d.status === 'ACTIVE' && (!!(d.observation?.trim()) || (d.condition ?? 100) < 70);
           const inCart = inTransferCart.has(d.id);
           const condition = d.condition ?? 100;
@@ -1271,7 +1271,7 @@ export default function Inventory() {
                       )}
                     </div>
                     <div className="min-w-0 flex-1 space-y-1">
-                      <p className="font-mono text-sm text-primary truncate">{d.internalCode}</p>
+                      <p className="font-mono text-xs text-muted truncate">{d.serialNumber || d.internalCode}</p>
                       <p className="font-medium text-foreground truncate">{d.name}</p>
                       <p className="text-xs text-muted truncate">{d.brand} {d.model}</p>
                       <p className="text-xs text-muted truncate">
@@ -1348,7 +1348,7 @@ export default function Inventory() {
                       className="h-4 w-4 rounded border-border"
                     />
                   </th>
-                  <th className="text-left py-4 px-4 font-medium text-muted">Código</th>
+                  <th className="text-left py-4 px-4 font-medium text-muted">N.° de serie</th>
                   <th className="text-left py-4 px-4 font-medium text-muted">Nombre</th>
                   <th className="text-left py-4 px-4 font-medium text-muted">Marca/Modelo</th>
                   <th className="text-left py-4 px-4 font-medium text-muted">Categoría</th>
@@ -1359,7 +1359,7 @@ export default function Inventory() {
                 </tr>
               </thead>
               <tbody>
-                {devices.map((d: { id: string; internalCode: string; name: string; brand: string; model: string; category: { name: string }; status: string; location: string; condition: number; observation?: string | null }) => {
+                {devices.map((d: { id: string; internalCode: string; serialNumber?: string | null; name: string; brand: string; model: string; category: { name: string }; status: string; location: string; condition: number; observation?: string | null }) => {
                   const hasObservation = d.status === 'ACTIVE' && (!!(d.observation?.trim()) || d.condition < 70);
                   return (
                   <tr
@@ -1375,11 +1375,19 @@ export default function Inventory() {
                       />
                     </td>
                     <td className="py-3 px-4">
-                      <Link to={`/inventory/${d.id}`} className="text-primary hover:underline font-mono">
-                        {d.internalCode}
+                      {d.serialNumber ? (
+                        <span className="font-mono text-foreground">{d.serialNumber}</span>
+                      ) : (
+                        <span className="font-mono text-muted" title={`Sin número de serie. Código interno: ${d.internalCode}`}>
+                          {d.internalCode}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4">
+                      <Link to={`/inventory/${d.id}`} className="font-medium text-primary hover:underline">
+                        {d.name}
                       </Link>
                     </td>
-                    <td className="py-3 px-4 font-medium">{d.name}</td>
                     <td className="py-3 px-4 text-muted">{d.brand} {d.model}</td>
                     <td className="py-3 px-4">{d.category?.name}</td>
                     <td className="py-3 px-4">
@@ -1433,7 +1441,7 @@ export default function Inventory() {
       ) : (
         <div className="hidden md:block">
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {devices.map((d: { id: string; internalCode: string; name: string; brand: string; model: string; category: { name: string; color: string }; status: string; condition?: number; observation?: string | null; images: { url: string }[] }) => {
+          {devices.map((d: { id: string; internalCode: string; serialNumber?: string | null; name: string; brand: string; model: string; category: { name: string; color: string }; status: string; condition?: number; observation?: string | null; images: { url: string }[] }) => {
             const hasObservation = d.status === 'ACTIVE' && (!!(d.observation?.trim()) || (d.condition ?? 100) < 70);
             return (
             <div key={d.id} className={cn('relative group', selectedIds.has(d.id) && 'ring-2 ring-primary rounded-xl')}>
@@ -1459,7 +1467,7 @@ export default function Inventory() {
                     )}
                   </div>
                   <div className="p-4">
-                    <p className="font-mono text-xs text-primary">{d.internalCode}</p>
+                    <p className="font-mono text-xs text-muted">{d.serialNumber || d.internalCode}</p>
                     <h3 className="font-medium text-foreground mt-1">{d.name}</h3>
                     <p className="text-sm text-muted">{d.brand} {d.model}</p>
                     <div className="flex items-center justify-between mt-2 flex-wrap gap-1">
