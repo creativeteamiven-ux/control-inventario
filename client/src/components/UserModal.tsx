@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { cn } from '@/lib/utils';
+import { Eye, EyeOff } from 'lucide-react';
 
 const ROLES = [
   { value: 'ADMIN', label: 'Administrador' },
@@ -37,6 +38,7 @@ export default function UserModal({ open, onOpenChange, user }: UserModalProps) 
   const isEdit = !!user;
   const queryClient = useQueryClient();
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -55,6 +57,7 @@ export default function UserModal({ open, onOpenChange, user }: UserModalProps) 
   });
 
   useEffect(() => {
+    setShowPassword(false);
     if (user) {
       setForm({
         name: user.name,
@@ -193,29 +196,36 @@ export default function UserModal({ open, onOpenChange, user }: UserModalProps) 
                 ))}
               </select>
             </div>
-            {!isEdit && (
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Contraseña *</label>
+            <div>
+              <label className="block text-sm font-medium mb-1.5">
+                {isEdit ? 'Nueva contraseña' : 'Contraseña *'}
+              </label>
+              <div className="relative">
                 <Input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  placeholder="Mínimo 6 caracteres"
-                  minLength={6}
+                  placeholder={isEdit ? 'Dejar vacío para no cambiarla' : 'Mínimo 6 caracteres'}
+                  autoComplete="new-password"
+                  minLength={isEdit ? undefined : 6}
+                  className="pr-10"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  title={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
-            )}
-            {isEdit && form.password && (
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Nueva contraseña</label>
-                <Input
-                  type="password"
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  placeholder="Dejar vacío para no cambiar"
-                />
-              </div>
-            )}
+              {isEdit && (
+                <p className="text-xs text-muted mt-1">
+                  Mínimo 6 caracteres. Solo se cambia si escribes algo.
+                </p>
+              )}
+            </div>
           </div>
           <div>
             <div className="flex items-center justify-between mb-2">
