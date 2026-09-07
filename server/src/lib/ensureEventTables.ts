@@ -1,8 +1,18 @@
 import { PrismaClient } from '@prisma/client';
 
-/** Crea/actualiza tablas de eventos (Render/TiDB puede no ejecutar prisma migrate). */
-export async function ensureEventTables(prisma: PrismaClient): Promise<void> {
-  await prisma.$executeRawUnsafe(`
+/**
+ * Red de seguridad para el esquema de eventos, pensada para bases que se
+ * crearon antes de que hubiera migraciones versionadas.
+ *
+ * Consulta primero `information_schema` y ejecuta solo lo que falte. Antes se
+ * lanzaba cada sentencia a ciegas confiando en el `catch`, lo que llenaba el
+ * log de arranque de errores «Duplicate column name» y escondía los problemas
+ * reales. Cuando el esquema está completo, que es el caso normal, esto no
+ * ejecuta ningún DDL.
+ */
+
+const CREATE_TABLES: Record<string, string> = {
+  InventoryEvent: `
     CREATE TABLE IF NOT EXISTS \`InventoryEvent\` (
       \`id\` VARCHAR(191) NOT NULL,
       \`name\` VARCHAR(191) NOT NULL,
@@ -19,9 +29,8 @@ export async function ensureEventTables(prisma: PrismaClient): Promise<void> {
       INDEX \`InventoryEvent_eventDate_idx\`(\`eventDate\`),
       PRIMARY KEY (\`id\`)
     ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
-  `);
-
-  await prisma.$executeRawUnsafe(`
+  `,
+  InventoryEventList: `
     CREATE TABLE IF NOT EXISTS \`InventoryEventList\` (
       \`id\` VARCHAR(191) NOT NULL,
       \`eventId\` VARCHAR(191) NOT NULL,
@@ -34,9 +43,8 @@ export async function ensureEventTables(prisma: PrismaClient): Promise<void> {
       INDEX \`InventoryEventList_eventId_idx\`(\`eventId\`),
       PRIMARY KEY (\`id\`)
     ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
-  `);
-
-  await prisma.$executeRawUnsafe(`
+  `,
+  InventoryEventItem: `
     CREATE TABLE IF NOT EXISTS \`InventoryEventItem\` (
       \`id\` VARCHAR(191) NOT NULL,
       \`eventId\` VARCHAR(191) NOT NULL,
@@ -55,9 +63,8 @@ export async function ensureEventTables(prisma: PrismaClient): Promise<void> {
       UNIQUE INDEX \`InventoryEventItem_eventId_deviceId_key\`(\`eventId\`, \`deviceId\`),
       PRIMARY KEY (\`id\`)
     ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
-  `);
-
-  await prisma.$executeRawUnsafe(`
+  `,
+  InventoryEventScan: `
     CREATE TABLE IF NOT EXISTS \`InventoryEventScan\` (
       \`id\` VARCHAR(191) NOT NULL,
       \`eventId\` VARCHAR(191) NOT NULL,
@@ -73,86 +80,173 @@ export async function ensureEventTables(prisma: PrismaClient): Promise<void> {
       INDEX \`InventoryEventScan_createdAt_idx\`(\`createdAt\`),
       PRIMARY KEY (\`id\`)
     ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
-  `);
+  `,
+};
 
-  // Columnas nuevas en items (idempotente)
-  for (const sql of [
-    `ALTER TABLE \`InventoryEventItem\` ADD COLUMN \`listId\` VARCHAR(191) NULL`,
-    `ALTER TABLE \`InventoryEventItem\` ADD COLUMN \`originLocation\` VARCHAR(64) NULL`,
-    `ALTER TABLE \`InventoryEventItem\` ADD INDEX \`InventoryEventItem_listId_idx\`(\`listId\`)`,
-  ]) {
+const COLUMNS: { table: string; column: string; definition: string }[] = [
+  { table: 'InventoryEventItem', column: 'listId', definition: '`listId` VARCHAR(191) NULL' },
+  { table: 'InventoryEventItem', column: 'originLocation', definition: '`originLocation` VARCHAR(64) NULL' },
+  {
+    table: 'Movement',
+    column: 'status',
+    definition: "`status` ENUM('PENDING', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'APPROVED'",
+  },
+  { table: 'Movement', column: 'eventId', definition: '`eventId` VARCHAR(191) NULL' },
+  { table: 'Movement', column: 'eventListId', definition: '`eventListId` VARCHAR(191) NULL' },
+  { table: 'Movement', column: 'approvedBy', definition: '`approvedBy` VARCHAR(191) NULL' },
+  { table: 'Movement', column: 'approvedAt', definition: '`approvedAt` DATETIME(3) NULL' },
+  { table: 'Movement', column: 'rejectedAt', definition: '`rejectedAt` DATETIME(3) NULL' },
+];
+
+const INDEXES: { table: string; name: string; columns: string }[] = [
+  { table: 'InventoryEventItem', name: 'InventoryEventItem_listId_idx', columns: '`listId`' },
+  { table: 'Movement', name: 'Movement_status_idx', columns: '`status`' },
+  { table: 'Movement', name: 'Movement_eventId_idx', columns: '`eventId`' },
+];
+
+const FOREIGN_KEYS: { table: string; name: string; definition: string }[] = [
+  {
+    table: 'InventoryEventList',
+    name: 'InventoryEventList_eventId_fkey',
+    definition:
+      'FOREIGN KEY (`eventId`) REFERENCES `InventoryEvent`(`id`) ON DELETE CASCADE ON UPDATE CASCADE',
+  },
+  {
+    table: 'InventoryEventItem',
+    name: 'InventoryEventItem_eventId_fkey',
+    definition:
+      'FOREIGN KEY (`eventId`) REFERENCES `InventoryEvent`(`id`) ON DELETE CASCADE ON UPDATE CASCADE',
+  },
+  {
+    table: 'InventoryEventItem',
+    name: 'InventoryEventItem_listId_fkey',
+    definition:
+      'FOREIGN KEY (`listId`) REFERENCES `InventoryEventList`(`id`) ON DELETE CASCADE ON UPDATE CASCADE',
+  },
+  {
+    table: 'InventoryEventItem',
+    name: 'InventoryEventItem_deviceId_fkey',
+    definition:
+      'FOREIGN KEY (`deviceId`) REFERENCES `Device`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE',
+  },
+  {
+    table: 'InventoryEventScan',
+    name: 'InventoryEventScan_eventId_fkey',
+    definition:
+      'FOREIGN KEY (`eventId`) REFERENCES `InventoryEvent`(`id`) ON DELETE CASCADE ON UPDATE CASCADE',
+  },
+];
+
+/** Tablas sobre las que hay que inspeccionar columnas, índices y claves foráneas. */
+const INSPECTED = [...Object.keys(CREATE_TABLES), 'Movement'];
+
+async function inspect(prisma: PrismaClient) {
+  const list = INSPECTED.map((t) => `'${t}'`).join(', ');
+
+  const [tables, columns, indexes, constraints] = await Promise.all([
+    prisma.$queryRawUnsafe<{ TABLE_NAME: string }[]>(
+      `SELECT TABLE_NAME FROM information_schema.TABLES
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (${list})`
+    ),
+    prisma.$queryRawUnsafe<{ TABLE_NAME: string; COLUMN_NAME: string }[]>(
+      `SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (${list})`
+    ),
+    prisma.$queryRawUnsafe<{ TABLE_NAME: string; INDEX_NAME: string }[]>(
+      `SELECT TABLE_NAME, INDEX_NAME FROM information_schema.STATISTICS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (${list})`
+    ),
+    prisma.$queryRawUnsafe<{ CONSTRAINT_NAME: string }[]>(
+      `SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
+       WHERE TABLE_SCHEMA = DATABASE() AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+         AND TABLE_NAME IN (${list})`
+    ),
+  ]);
+
+  return {
+    tables: new Set(tables.map((r) => r.TABLE_NAME)),
+    columns: new Set(columns.map((r) => `${r.TABLE_NAME}.${r.COLUMN_NAME}`)),
+    indexes: new Set(indexes.map((r) => `${r.TABLE_NAME}.${r.INDEX_NAME}`)),
+    constraints: new Set(constraints.map((r) => r.CONSTRAINT_NAME)),
+  };
+}
+
+/**
+ * Rellena `listId` en los ítems que se crearon antes de que existieran las
+ * listas, agrupándolos en una «Lista general» por evento.
+ */
+async function backfillItemLists(prisma: PrismaClient): Promise<number> {
+  const orphans = await prisma.$queryRawUnsafe<{ eventId: string }[]>(
+    'SELECT `eventId` FROM `InventoryEventItem` WHERE `listId` IS NULL GROUP BY `eventId`'
+  );
+
+  for (const { eventId } of orphans) {
+    const listId = `migr_${eventId.slice(0, 18)}_${Date.now().toString(36)}`;
+    await prisma.$executeRawUnsafe(
+      'INSERT INTO `InventoryEventList` (`id`, `eventId`, `name`, `kind`, `sortOrder`) VALUES (?, ?, ?, ?, ?)',
+      listId,
+      eventId,
+      'Lista general',
+      'CUSTOM',
+      0
+    );
+    await prisma.$executeRawUnsafe(
+      'UPDATE `InventoryEventItem` SET `listId` = ? WHERE `eventId` = ? AND `listId` IS NULL',
+      listId,
+      eventId
+    );
+  }
+
+  return orphans.length;
+}
+
+export async function ensureEventTables(prisma: PrismaClient): Promise<void> {
+  let schema = await inspect(prisma);
+  const applied: string[] = [];
+
+  const missingTables = Object.keys(CREATE_TABLES).filter((t) => !schema.tables.has(t));
+  for (const table of missingTables) {
+    await prisma.$executeRawUnsafe(CREATE_TABLES[table]);
+    applied.push(`tabla ${table}`);
+  }
+  // Las tablas recién creadas ya traen sus columnas e índices propios.
+  if (missingTables.length) schema = await inspect(prisma);
+
+  for (const { table, column, definition } of COLUMNS) {
+    if (!schema.tables.has(table) || schema.columns.has(`${table}.${column}`)) continue;
+    await prisma.$executeRawUnsafe(`ALTER TABLE \`${table}\` ADD COLUMN ${definition}`);
+    applied.push(`columna ${table}.${column}`);
+  }
+
+  for (const { table, name, columns } of INDEXES) {
+    if (!schema.tables.has(table) || schema.indexes.has(`${table}.${name}`)) continue;
+    await prisma.$executeRawUnsafe(`ALTER TABLE \`${table}\` ADD INDEX \`${name}\`(${columns})`);
+    applied.push(`indice ${name}`);
+  }
+
+  for (const { table, name, definition } of FOREIGN_KEYS) {
+    if (!schema.tables.has(table) || schema.constraints.has(name)) continue;
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE \`${table}\` ADD CONSTRAINT \`${name}\` ${definition}`
+    );
+    applied.push(`clave foranea ${name}`);
+  }
+
+  // El backfill es un arreglo de datos, no de esquema: si falla, la aplicación
+  // sigue siendo usable porque puede crear listas nuevas.
+  if (schema.tables.has('InventoryEventItem')) {
     try {
-      await prisma.$executeRawUnsafe(sql);
-    } catch {
-      /* ya existe */
-    }
-  }
-
-  // Movement: estado de autorización
-  try {
-    await prisma.$executeRawUnsafe(`
-      ALTER TABLE \`Movement\`
-      ADD COLUMN \`status\` ENUM('PENDING', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'APPROVED'
-    `);
-  } catch {
-    /* ya existe */
-  }
-  for (const sql of [
-    `ALTER TABLE \`Movement\` ADD COLUMN \`eventId\` VARCHAR(191) NULL`,
-    `ALTER TABLE \`Movement\` ADD COLUMN \`eventListId\` VARCHAR(191) NULL`,
-    `ALTER TABLE \`Movement\` ADD COLUMN \`approvedBy\` VARCHAR(191) NULL`,
-    `ALTER TABLE \`Movement\` ADD COLUMN \`approvedAt\` DATETIME(3) NULL`,
-    `ALTER TABLE \`Movement\` ADD COLUMN \`rejectedAt\` DATETIME(3) NULL`,
-    `ALTER TABLE \`Movement\` ADD INDEX \`Movement_status_idx\`(\`status\`)`,
-    `ALTER TABLE \`Movement\` ADD INDEX \`Movement_eventId_idx\`(\`eventId\`)`,
-  ]) {
-    try {
-      await prisma.$executeRawUnsafe(sql);
-    } catch {
-      /* ya existe */
-    }
-  }
-
-  // FKs
-  for (const sql of [
-    `ALTER TABLE \`InventoryEventList\` ADD CONSTRAINT \`InventoryEventList_eventId_fkey\`
-      FOREIGN KEY (\`eventId\`) REFERENCES \`InventoryEvent\`(\`id\`) ON DELETE CASCADE ON UPDATE CASCADE`,
-    `ALTER TABLE \`InventoryEventItem\` ADD CONSTRAINT \`InventoryEventItem_eventId_fkey\`
-      FOREIGN KEY (\`eventId\`) REFERENCES \`InventoryEvent\`(\`id\`) ON DELETE CASCADE ON UPDATE CASCADE`,
-    `ALTER TABLE \`InventoryEventItem\` ADD CONSTRAINT \`InventoryEventItem_listId_fkey\`
-      FOREIGN KEY (\`listId\`) REFERENCES \`InventoryEventList\`(\`id\`) ON DELETE CASCADE ON UPDATE CASCADE`,
-    `ALTER TABLE \`InventoryEventItem\` ADD CONSTRAINT \`InventoryEventItem_deviceId_fkey\`
-      FOREIGN KEY (\`deviceId\`) REFERENCES \`Device\`(\`id\`) ON DELETE RESTRICT ON UPDATE CASCADE`,
-    `ALTER TABLE \`InventoryEventScan\` ADD CONSTRAINT \`InventoryEventScan_eventId_fkey\`
-      FOREIGN KEY (\`eventId\`) REFERENCES \`InventoryEvent\`(\`id\`) ON DELETE CASCADE ON UPDATE CASCADE`,
-  ]) {
-    try {
-      await prisma.$executeRawUnsafe(sql);
-    } catch {
-      /* ya existe */
-    }
-  }
-
-  // Migrar ítems sin lista → "Lista general" por evento
-  try {
-    const orphans = (await prisma.$queryRawUnsafe(
-      `SELECT \`eventId\`, COUNT(*) AS cnt FROM \`InventoryEventItem\` WHERE \`listId\` IS NULL GROUP BY \`eventId\``
-    )) as { eventId: string; cnt: bigint }[];
-    for (const row of orphans) {
-      const eventId = row.eventId;
-      const listId = `migr_${eventId.slice(0, 18)}_${Date.now().toString(36)}`;
-      await prisma.$executeRawUnsafe(
-        `INSERT INTO \`InventoryEventList\` (\`id\`, \`eventId\`, \`name\`, \`kind\`, \`sortOrder\`) VALUES (?, ?, 'Lista general', 'CUSTOM', 0)`,
-        listId,
-        eventId
+      const backfilled = await backfillItemLists(prisma);
+      if (backfilled) applied.push(`${backfilled} evento(s) con lista general`);
+    } catch (e) {
+      console.warn(
+        '[DB] No se pudo asignar lista general a los items antiguos:',
+        e instanceof Error ? e.message : e
       );
-      await prisma.$executeRawUnsafe(
-        `UPDATE \`InventoryEventItem\` SET \`listId\` = ? WHERE \`eventId\` = ? AND \`listId\` IS NULL`,
-        listId,
-        eventId
-      );
     }
-  } catch {
-    /* si falla la migración, la app puede crear listas nuevas */
+  }
+
+  if (applied.length) {
+    console.log(`[DB] Esquema de eventos actualizado: ${applied.join(', ')}`);
   }
 }
